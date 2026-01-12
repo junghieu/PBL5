@@ -34,7 +34,8 @@ def preprocess_image(image_path: str) -> str:
     denoised = cv2.fastNlMeansDenoising(thresh, h=10)
     
     # Save preprocessed image
-    preprocessed_path = image_path.replace(".", "_preprocessed.")
+    base, ext = os.path.splitext(image_path)
+    preprocessed_path = f"{base}_preprocessed{ext}"
     cv2.imwrite(preprocessed_path, denoised)
     
     return preprocessed_path

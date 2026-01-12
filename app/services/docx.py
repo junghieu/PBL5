@@ -31,7 +31,9 @@ def create_docx_from_text(text_content: str, output_path: str) -> str:
                 run.font.size = Pt(12)
     
     # Ensure the output directory exists
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    output_dir = os.path.dirname(output_path)
+    if output_dir:  # Only create if there's a directory in the path
+        os.makedirs(output_dir, exist_ok=True)
     
     # Save the document
     doc.save(output_path)

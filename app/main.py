@@ -1,6 +1,7 @@
 from fastapi import FastAPI, UploadFile, File, BackgroundTasks, HTTPException
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from contextlib import asynccontextmanager
 import os
 import shutil
 from datetime import datetime
@@ -10,21 +11,23 @@ from app.services.image import preprocess_image, validate_image
 from app.services.ocr import extract_text_from_image
 from app.services.docx import create_docx_from_text
 
-# Initialize FastAPI app
-app = FastAPI(title="OCR Service API", version="1.0.0")
 
-# Create necessary directories
-os.makedirs("uploads", exist_ok=True)
-os.makedirs("outputs", exist_ok=True)
-os.makedirs("static", exist_ok=True)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan context manager for startup and shutdown events."""
+    # Startup: Initialize database and create directories
+    init_db()
+    os.makedirs("uploads", exist_ok=True)
+    os.makedirs("outputs", exist_ok=True)
+    os.makedirs("static", exist_ok=True)
+    yield
+    # Shutdown: cleanup if needed
+
+# Initialize FastAPI app with lifespan
+app = FastAPI(title="OCR Service API", version="1.0.0", lifespan=lifespan)
 
 # Mount static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
-
-# Initialize database on startup
-@app.on_event("startup")
-async def startup_event():
-    init_db()
 
 
 def process_ocr_task(scan_id: int, image_path: str):
