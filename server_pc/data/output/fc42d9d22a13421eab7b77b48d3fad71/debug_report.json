@@ -1,0 +1,29 @@
+{
+  "job_id": "fc42d9d22a13421eab7b77b48d3fad71",
+  "input_filename": "devanclean2.jpg",
+  "input_saved_as": "capture.jpg",
+  "layout_summary": {
+    "total_boxes": 17,
+    "boxes_by_label": {
+      "plain text": 10,
+      "title": 4,
+      "abandon": 3
+    },
+    "avg_confidence": 0.7775
+  },
+  "ocr_summary": {
+    "total_lines": 13,
+    "total_chars": 749
+  },
+  "timings_sec": {
+    "save_image_sec": 0.004,
+    "preprocess_layout_sec": 0.1922,
+    "preprocess_ocr_sec": 0.2595,
+    "layout_sec": 2.1856,
+    "ocr_sec": 156.206,
+    "export_docx_sec": 0.0605
+  },
+  "total_elapsed_sec": 158.9189,
+  "docx_filename": "result_fc42d9d22a13421eab7b77b48d3fad71.docx",
+  "docx_size_bytes": 37332
+}

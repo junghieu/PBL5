@@ -1,0 +1,1480 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DocScan — Số hóa tài liệu</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600&display=swap');
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary: #3b82f6;
+            --accent: #a855f7;
+            --secondary: #ec4899;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --bg: #f8f9fa;
+            --surface: #ffffff;
+            --border: #e5e7eb;
+            --text-dark: #1f2937;
+            --text-light: #6b7280;
+            --shadow: 0 4px 6px rgba(0, 0, 0, 0.07), 0 10px 13px rgba(0, 0, 0, 0.05);
+            --shadow-lg: 0 20px 25px rgba(0, 0, 0, 0.1);
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            background: linear-gradient(135deg, #f0f4ff 0%, #fff5f9 100%);
+            color: var(--text-dark);
+            font-family: 'Inter', sans-serif;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        body::before {
+            content: '';
+            position: fixed;
+            top: -50%;
+            right: -10%;
+            width: 600px;
+            height: 600px;
+            background: radial-gradient(circle, rgba(168, 85, 247, 0.15) 0%, transparent 70%);
+            border-radius: 50%;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        body::after {
+            content: '';
+            position: fixed;
+            bottom: -20%;
+            left: -5%;
+            width: 500px;
+            height: 500px;
+            background: radial-gradient(circle, rgba(59, 130, 246, 0.15) 0%, transparent 70%);
+            border-radius: 50%;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 40px 20px;
+            position: relative;
+            z-index: 1;
+        }
+
+        /* ── HEADER ── */
+        header {
+            text-align: center;
+            margin-bottom: 40px;
+            animation: fadeInDown 0.6s ease-out;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .logo-icon {
+            font-size: 32px;
+            animation: bounce 2s ease-in-out infinite;
+        }
+
+        .logo-text {
+            font-size: 28px;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 50%, var(--secondary) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .subtitle {
+            color: var(--text-light);
+            font-size: 14px;
+            letter-spacing: 0.5px;
+            margin-top: 8px;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            font-size: 12px;
+            color: var(--text-light);
+            margin-top: 12px;
+            box-shadow: var(--shadow);
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--text-light);
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        .status-dot.online {
+            background: var(--success);
+            box-shadow: 0 0 8px var(--success);
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 0.6; }
+            50% { opacity: 1; }
+        }
+
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-8px); }
+        }
+
+        @keyframes fadeInDown {
+            from {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* ── MAIN LAYOUT ── */
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1.5fr 1fr;
+            gap: 24px;
+            margin-bottom: 32px;
+        }
+
+        @media (max-width: 1024px) {
+            .main-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* ── CARD ── */
+        .card {
+            background: var(--surface);
+            border-radius: 16px;
+            border: 1px solid var(--border);
+            box-shadow: var(--shadow);
+            overflow: hidden;
+            transition: all 0.3s ease;
+            animation: fadeInUp 0.6s ease-out;
+        }
+
+        .card:hover {
+            border-color: var(--primary);
+            box-shadow: 0 0 20px rgba(59, 130, 246, 0.1);
+        }
+
+        .card-header {
+            padding: 20px;
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.05) 0%, rgba(168, 85, 247, 0.05) 100%);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .card-title {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        .card-icon {
+            font-size: 20px;
+        }
+
+        .card-body {
+            padding: 24px;
+        }
+
+        /* ── TABS ── */
+        .tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 20px;
+            border-bottom: 2px solid var(--border);
+        }
+
+        .tab-btn {
+            padding: 12px 16px;
+            background: none;
+            border: none;
+            color: var(--text-light);
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            position: relative;
+            transition: color 0.3s ease;
+            border-bottom: 3px solid transparent;
+            margin-bottom: -2px;
+        }
+
+        .tab-btn:hover {
+            color: var(--primary);
+        }
+
+        .tab-btn.active {
+            color: var(--primary);
+            border-bottom-color: var(--primary);
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+            animation: fadeInUp 0.3s ease-out;
+        }
+
+        /* ── CAMERA SECTION ── */
+        #camera-container {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 4 / 3;
+            background: linear-gradient(135deg, #f0f4ff 0%, #fff5f9 100%);
+            border-radius: 12px;
+            overflow: hidden;
+            border: 2px solid var(--border);
+            margin-bottom: 16px;
+        }
+
+        #camera-video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: none;
+        }
+
+        .camera-placeholder {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+            color: var(--text-light);
+        }
+
+        .camera-placeholder-icon {
+            font-size: 48px;
+            opacity: 0.6;
+        }
+
+        .camera-placeholder-text {
+            text-align: center;
+        }
+
+        .camera-placeholder-text p {
+            font-size: 14px;
+            margin: 0;
+        }
+
+        /* Scan overlay */
+        #scan-overlay {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            display: none;
+        }
+
+        #scan-overlay.scanning {
+            display: block;
+        }
+
+        .scan-line {
+            position: absolute;
+            left: 5%;
+            right: 5%;
+            height: 3px;
+            background: linear-gradient(90deg, transparent, var(--primary), transparent);
+            animation: scanMove 2s ease-in-out infinite;
+            box-shadow: 0 0 12px var(--primary);
+        }
+
+        @keyframes scanMove {
+            0% { top: 10%; opacity: 0; }
+            10% { opacity: 1; }
+            90% { opacity: 1; }
+            100% { top: 90%; opacity: 0; }
+        }
+
+        .scan-corner {
+            position: absolute;
+            width: 24px;
+            height: 24px;
+            border: 3px solid var(--primary);
+        }
+
+        .scan-corner.tl { top: 8%; left: 8%; border-right: none; border-bottom: none; }
+        .scan-corner.tr { top: 8%; right: 8%; border-left: none; border-bottom: none; }
+        .scan-corner.bl { bottom: 8%; left: 8%; border-right: none; border-top: none; }
+        .scan-corner.br { bottom: 8%; right: 8%; border-left: none; border-top: none; }
+
+        /* ── CAPTURED IMAGE ── */
+        #captured-image-container {
+            position: relative;
+            width: 100%;
+            background: var(--bg);
+            border-radius: 12px;
+            overflow: hidden;
+            border: 2px solid var(--border);
+            margin-bottom: 16px;
+            display: none;
+        }
+
+        #captured-image {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+
+        .captured-clear {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            width: 32px;
+            height: 32px;
+            background: rgba(0, 0, 0, 0.8);
+            border: none;
+            border-radius: 50%;
+            color: white;
+            font-size: 16px;
+            cursor: pointer;
+            display: grid;
+            place-items: center;
+            transition: all 0.2s ease;
+        }
+
+        .captured-clear:hover {
+            background: var(--danger);
+        }
+
+        /* ── UPLOAD ZONE ── */
+        .upload-zone {
+            border: 2px dashed var(--border);
+            border-radius: 12px;
+            padding: 32px 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.02) 0%, rgba(168, 85, 247, 0.02) 100%);
+        }
+
+        .upload-zone:hover,
+        .upload-zone.dragover {
+            border-color: var(--primary);
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.08) 0%, rgba(168, 85, 247, 0.08) 100%);
+        }
+
+        .upload-icon {
+            font-size: 40px;
+            margin-bottom: 12px;
+            display: block;
+            animation: bounce 2s ease-in-out infinite;
+        }
+
+        .upload-text {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-dark);
+            margin-bottom: 4px;
+        }
+
+        .upload-hint {
+            font-size: 12px;
+            color: var(--text-light);
+        }
+
+        #file-input {
+            display: none;
+        }
+
+        /* Preview */
+        #upload-preview {
+            display: none;
+            margin-top: 16px;
+            position: relative;
+        }
+
+        #upload-preview img {
+            width: 100%;
+            max-height: 200px;
+            object-fit: contain;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: var(--bg);
+        }
+
+        .preview-clear {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            width: 28px;
+            height: 28px;
+            background: rgba(0, 0, 0, 0.8);
+            border: none;
+            border-radius: 50%;
+            color: white;
+            font-size: 14px;
+            cursor: pointer;
+            display: grid;
+            place-items: center;
+            transition: all 0.2s ease;
+        }
+
+        .preview-clear:hover {
+            background: var(--danger);
+        }
+
+        /* ── BUTTONS ── */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-family: 'Poppins', sans-serif;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border: none;
+            letter-spacing: 0.3px;
+            white-space: nowrap;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
+            color: white;
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(59, 130, 246, 0.4);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-secondary {
+            background: var(--surface);
+            color: var(--text-dark);
+            border: 1px solid var(--border);
+        }
+
+        .btn-secondary:hover {
+            border-color: var(--primary);
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.05) 0%, rgba(168, 85, 247, 0.05) 100%);
+        }
+
+        .btn-ghost {
+            background: none;
+            color: var(--text-light);
+            border: 1px solid var(--border);
+        }
+
+        .btn-ghost:hover {
+            color: var(--primary);
+            border-color: var(--primary);
+        }
+
+        .btn-full {
+            width: 100%;
+        }
+
+        .btn-row {
+            display: flex;
+            gap: 12px;
+            margin-top: 16px;
+        }
+
+        .btn-row .btn {
+            flex: 1;
+        }
+
+        /* ── PROGRESS ── */
+        #progress-section,
+        #progress-section-cam {
+            display: none;
+            margin-top: 16px;
+        }
+
+        .progress-label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            color: var(--text-light);
+            margin-bottom: 8px;
+        }
+
+        .progress-bar {
+            height: 4px;
+            background: var(--border);
+            border-radius: 2px;
+            overflow: hidden;
+            margin-bottom: 12px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--primary), var(--accent), var(--secondary));
+            border-radius: 2px;
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        .progress-steps {
+            display: flex;
+            gap: 8px;
+        }
+
+        .step {
+            flex: 1;
+            padding: 8px 10px;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-size: 11px;
+            color: var(--text-light);
+            text-align: center;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+
+        .step.active {
+            border-color: var(--primary);
+            color: var(--primary);
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.08) 0%, rgba(168, 85, 247, 0.08) 100%);
+        }
+
+        .step.done {
+            border-color: var(--success);
+            color: var(--success);
+            background: rgba(16, 185, 129, 0.08);
+        }
+
+        /* ── INFO SECTION ── */
+        .info-box {
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.05) 0%, rgba(168, 85, 247, 0.05) 100%);
+            border: 1px solid rgba(59, 130, 246, 0.2);
+            border-radius: 8px;
+            padding: 14px;
+            margin-bottom: 14px;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+
+        .info-box-title {
+            font-weight: 600;
+            color: var(--primary);
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            font-size: 11px;
+            letter-spacing: 0.5px;
+        }
+
+        .info-box-content {
+            color: var(--text-dark);
+        }
+
+        .info-box-list {
+            list-style: none;
+            padding: 0;
+        }
+
+        .info-box-list li {
+            padding: 4px 0;
+            color: var(--text-light);
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+        }
+
+        .info-box-list li::before {
+            content: '→';
+            color: var(--primary);
+            font-weight: 700;
+            flex-shrink: 0;
+        }
+
+        /* ── RESULT SECTION ── */
+        #result-section {
+            display: none;
+            grid-column: 1 / -1;
+            animation: fadeInUp 0.6s ease-out;
+        }
+
+        .result-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1px;
+            background: var(--border);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        @media (max-width: 768px) {
+            .result-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .result-col {
+            background: var(--surface);
+            padding: 20px;
+        }
+
+        .result-col-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+        }
+
+        .result-col-title {
+            font-weight: 700;
+            font-size: 12px;
+            color: var(--text-light);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        #ocr-text-output {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 14px;
+            min-height: 200px;
+            max-height: 400px;
+            overflow-y: auto;
+            font-size: 13px;
+            line-height: 1.8;
+            color: var(--text-dark);
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        #ocr-text-output::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        #ocr-text-output::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        #ocr-text-output::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 3px;
+        }
+
+        .ocr-line {
+            padding: 3px 0;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.02);
+            animation: fadeInUp 0.3s ease forwards;
+            opacity: 0;
+        }
+
+        #layout-img-wrap {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            overflow: hidden;
+            min-height: 200px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #layout-img-wrap img {
+            max-width: 100%;
+            max-height: 400px;
+            object-fit: contain;
+        }
+
+        /* Stats */
+        .stats-row {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin-bottom: 16px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .stat {
+            padding: 14px;
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.05) 0%, rgba(168, 85, 247, 0.05) 100%);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .stat-val {
+            font-weight: 700;
+            font-size: 24px;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            line-height: 1;
+            margin-bottom: 4px;
+        }
+
+        .stat-label {
+            font-size: 11px;
+            color: var(--text-light);
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            font-weight: 500;
+        }
+
+        /* Download bar */
+        #download-bar {
+            display: none;
+            grid-column: 1 / -1;
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(59, 130, 246, 0.08) 100%);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            border-radius: 12px;
+            padding: 16px 20px;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            animation: fadeInUp 0.4s ease-out;
+        }
+
+        .download-info {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .download-filename {
+            font-weight: 700;
+            font-size: 14px;
+            color: var(--text-dark);
+        }
+
+        .download-meta {
+            font-size: 12px;
+            color: var(--text-light);
+        }
+
+        /* ── TOAST ── */
+        #toast {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            padding: 14px 20px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-size: 14px;
+            color: var(--text-dark);
+            z-index: 999;
+            transform: translateY(100px);
+            opacity: 0;
+            transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+            max-width: 320px;
+            box-shadow: var(--shadow-lg);
+        }
+
+        #toast.show {
+            transform: translateY(0);
+            opacity: 1;
+        }
+
+        #toast.success {
+            border-color: rgba(16, 185, 129, 0.3);
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(16, 185, 129, 0.04) 100%);
+            color: var(--success);
+        }
+
+        #toast.error {
+            border-color: rgba(239, 68, 68, 0.3);
+            background: linear-gradient(135deg, rgba(239, 68, 68, 0.08) 0%, rgba(239, 68, 68, 0.04) 100%);
+            color: var(--danger);
+        }
+
+        /* ── FOOTER ── */
+        footer {
+            border-top: 1px solid var(--border);
+            padding: 20px; /* Đổi thành 20px để có khoảng cách 2 bên */
+            text-align: center;
+            color: var(--text-light);
+            font-size: 12px;
+            letter-spacing: 0.5px;
+            position: relative; /* Thêm dòng này làm gốc định vị */
+        }
+
+        #footer-time {
+            position: absolute;
+            right: 20px; /* Ép thời gian dính sát lề phải 20px */
+            top: 50%; /* Đẩy xuống giữa */
+            transform: translateY(-50%); /* Căn chuẩn xác ở giữa theo chiều dọc */
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .container {
+                padding: 24px 16px;
+            }
+
+            header {
+                margin-bottom: 24px;
+            }
+
+            .logo-text {
+                font-size: 24px;
+            }
+
+            .btn-row {
+                flex-direction: row;
+            }
+
+            .stats-row {
+                grid-template-columns: 1fr;
+            }
+
+            #download-bar {
+                flex-direction: column;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <!-- HEADER -->
+    <header>
+        <div class="logo">
+            <div class="logo-icon">📄</div>
+            <div class="logo-text">DocScan</div>
+        </div>
+        <p class="subtitle">Hệ thống số hóa tài liệu thông minh</p>
+        <div class="status-badge">
+            <div class="status-dot online" id="server-status-dot"></div>
+            <span id="server-status-text">kiểm tra server...</span>
+        </div>
+    </header>
+
+    <!-- MAIN GRID -->
+    <div class="main-grid">
+        <!-- LEFT: INPUT SECTION -->
+        <div class="card">
+            <!-- TABS -->
+            <div class="tabs">
+                <button class="tab-btn active" data-tab="camera">
+                    Camera Pi
+                </button>
+                <button class="tab-btn" data-tab="upload">
+                    Upload ảnh
+                </button>
+            </div>
+
+            <!-- TAB 1: CAMERA -->
+            <div class="tab-content active" id="tab-camera">
+                <div class="card-body">
+                    <div id="camera-container">
+                        <video id="camera-video" autoplay muted playsinline></video>
+                        <div class="camera-placeholder" id="camera-placeholder">
+                            <div class="camera-placeholder-icon">📷</div>
+                            <div class="camera-placeholder-text">
+                                <p>Camera chưa bật</p>
+                            </div>
+                        </div>
+                        <div id="scan-overlay">
+                            <div class="scan-line"></div>
+                            <div class="scan-corner tl"></div>
+                            <div class="scan-corner tr"></div>
+                            <div class="scan-corner bl"></div>
+                            <div class="scan-corner br"></div>
+                        </div>
+                    </div>
+
+                    <!-- Ảnh vừa chụp -->
+                    <div id="captured-image-container">
+                        <img id="captured-image" src="" alt="Ảnh vừa chụp">
+                        <button class="captured-clear" onclick="clearCaptured()" title="Xóa">✕</button>
+                    </div>
+
+                    <div id="progress-section-cam">
+                        <div class="progress-label">
+                            <span id="progress-text-cam">Đang xử lý...</span>
+                            <span id="progress-pct-cam">0%</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="progress-fill-cam"></div>
+                        </div>
+                    </div>
+
+                    <div class="btn-row">
+                        <button class="btn btn-secondary" id="btn-cam-toggle" onclick="toggleCamera()">
+                            Bật camera
+                        </button>
+                        <button class="btn btn-primary" id="btn-capture" onclick="captureAndProcess()" disabled>
+                            Chụp
+                        </button>
+                    </div>
+
+                    <button class="btn btn-primary btn-full" id="btn-process-camera" onclick="processCameraImage()" disabled style="margin-top: 12px;">
+                        Xử lý ảnh
+                    </button>
+                </div>
+            </div>
+
+            <!-- TAB 2: UPLOAD -->
+            <div class="tab-content" id="tab-upload">
+                <div class="card-body">
+                    <div class="upload-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
+                        <span class="upload-icon">⬡</span>
+                        <div class="upload-text">Kéo thả hoặc click</div>
+                        <div class="upload-hint">JPG • PNG • BMP • TIFF</div>
+                    </div>
+                    <input type="file" id="file-input" accept="image/*">
+
+                    <div id="upload-preview">
+                        <img id="preview-img" src="" alt="preview">
+                        <button class="preview-clear" onclick="clearUpload()" title="Xóa">✕</button>
+                    </div>
+
+                    <div id="progress-section">
+                        <div class="progress-label">
+                            <span id="progress-text">Đang xử lý...</span>
+                            <span id="progress-pct">0%</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="progress-fill"></div>
+                        </div>
+                        <div class="progress-steps">
+                            <div class="step" id="step-1">Tiền xử lý</div>
+                            <div class="step" id="step-2">Layout</div>
+                            <div class="step" id="step-3">OCR</div>
+                            <div class="step" id="step-4">Word</div>
+                        </div>
+                    </div>
+
+                    <button class="btn btn-primary btn-full" id="btn-process-upload" onclick="processUpload()" disabled style="margin-top: 16px;">
+                        Xử lý
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- RIGHT: INFO -->
+        <div class="card">
+            <div class="card-header">
+                <div class="card-title">
+                    <span class="card-icon">ℹ</span>
+                    Hướng dẫn
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="info-box">
+                    <div class="info-box-title">Pipeline xử lý</div>
+                    <ul class="info-box-list">
+                        <li>Chụp ảnh tài liệu</li>
+                        <li>Tiền xử lý & phẳng ảnh</li>
+                        <li>Phân tích bố cục (YOLO)</li>
+                        <li>Nhận diện chữ (OCR)</li>
+                        <li>Xuất file Word</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- RESULT SECTION -->
+    <div class="card" id="result-section">
+        <div class="card-header">
+            <div class="card-title">
+                <span class="card-icon">✦</span>
+                Kết quả xử lý
+            </div>
+            <button class="btn btn-ghost" onclick="clearResult()" style="padding: 6px 12px; font-size: 12px;">
+                ✕ Xóa
+            </button>
+        </div>
+
+        <div class="card-body">
+            <div class="stats-row">
+                <div class="stat">
+                    <div class="stat-val" id="stat-boxes">—</div>
+                    <div class="stat-label">Vùng phát hiện</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-val" id="stat-lines">—</div>
+                    <div class="stat-label">Dòng văn bản</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-val" id="stat-chars">—</div>
+                    <div class="stat-label">Ký tự</div>
+                </div>
+            </div>
+
+            <div id="download-bar">
+                <div class="download-info">
+                    <div class="download-filename" id="download-filename">result.docx</div>
+                    <div class="download-meta" id="download-meta">Sẵn sàng tải về</div>
+                </div>
+                <button class="btn btn-primary" id="btn-download" onclick="downloadDocx()">
+                    Tải .docx
+                </button>
+            </div>
+
+            <div class="result-grid">
+                <div class="result-col">
+                    <div class="result-col-header">
+                        <div class="result-col-title">Văn bản OCR</div>
+                        <button class="btn btn-ghost" style="padding: 4px 10px; font-size: 11px;" onclick="copyOCR()">⧉ Copy</button>
+                    </div>
+                    <div id="ocr-text-output">
+                        <span style="color: var(--text-light);">Kết quả sẽ hiển thị tại đây...</span>
+                    </div>
+                </div>
+                <div class="result-col">
+                    <div class="result-col-header">
+                        <div class="result-col-title">Bố cục YOLO</div>
+                    </div>
+                    <div id="layout-img-wrap">
+                        <span style="color: var(--text-light);">Ảnh bố cục sẽ hiện tại đây</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- FOOTER -->
+    <footer>
+        <span>PBL5 — Hệ thống số hóa tài liệu</span>
+        <span id="footer-time"></span>
+    </footer>
+</div>
+
+<!-- TOAST -->
+<div id="toast"></div>
+
+<script>
+    // ── STATE ──
+    let uploadedFile = null;
+    let capturedImageBlob = null;
+    let cameraStream = null;
+    let currentDocxB64 = null;
+    let currentDocxName = null;
+
+    // ── INIT ──
+    document.addEventListener('DOMContentLoaded', () => {
+        checkServer();
+        setupDragDrop();
+        setupFileInput();
+        setupTabs();
+        const serverUrlEl = document.getElementById('server-url-display');
+        if (serverUrlEl) {
+            serverUrlEl.textContent = window.location.origin + '/process';
+        }
+        setInterval(() => {
+            document.getElementById('footer-time').textContent = new Date().toLocaleTimeString('vi-VN');
+        }, 1000);
+    });
+
+    // ── SERVER CHECK ──
+    async function checkServer() {
+        const dot = document.getElementById('server-status-dot');
+        const txt = document.getElementById('server-status-text');
+        try {
+            const r = await fetch('/health', { signal: AbortSignal.timeout(3000) });
+            if (r.ok) {
+                dot.classList.add('online');
+                txt.textContent = 'server online';
+            } else { throw new Error(); }
+        } catch {
+            dot.style.background = 'var(--danger)';
+            txt.textContent = 'server offline';
+        }
+    }
+
+    // ── TABS ──
+    function setupTabs() {
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const tab = btn.dataset.tab;
+                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                btn.classList.add('active');
+                document.getElementById('tab-' + tab).classList.add('active');
+            });
+        });
+    }
+
+    // ── DRAG & DROP ──
+    function setupDragDrop() {
+        const zone = document.getElementById('drop-zone');
+        zone.addEventListener('dragover', e => { 
+            e.preventDefault(); 
+            zone.classList.add('dragover'); 
+        });
+        zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+        zone.addEventListener('drop', e => {
+            e.preventDefault();
+            zone.classList.remove('dragover');
+            const f = e.dataTransfer.files[0];
+            if (f && f.type.startsWith('image/')) setUploadFile(f);
+        });
+    }
+
+    // ── FILE INPUT ──
+    function setupFileInput() {
+        document.getElementById('file-input').addEventListener('change', e => {
+            if (e.target.files[0]) setUploadFile(e.target.files[0]);
+        });
+    }
+
+    function setUploadFile(file) {
+        uploadedFile = file;
+        const reader = new FileReader();
+        reader.onload = e => {
+            document.getElementById('preview-img').src = e.target.result;
+            document.getElementById('upload-preview').style.display = 'block';
+        };
+        reader.readAsDataURL(file);
+        document.getElementById('btn-process-upload').disabled = false;
+    }
+
+    function clearUpload() {
+        uploadedFile = null;
+        document.getElementById('upload-preview').style.display = 'none';
+        document.getElementById('preview-img').src = '';
+        document.getElementById('file-input').value = '';
+        document.getElementById('btn-process-upload').disabled = true;
+    }
+
+    // ── CAMERA ──
+    async function toggleCamera() {
+        const btn = document.getElementById('btn-cam-toggle');
+        const video = document.getElementById('camera-video');
+        const placeholder = document.getElementById('camera-placeholder');
+
+        if (cameraStream) {
+            cameraStream.getTracks().forEach(t => t.stop());
+            cameraStream = null;
+            video.style.display = 'none';
+            placeholder.style.display = 'flex';
+            btn.innerHTML = 'Bật camera';
+            document.getElementById('btn-capture').disabled = true;
+        } else {
+            try {
+                cameraStream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: 'environment' } 
+                });
+                video.srcObject = cameraStream;
+                video.style.display = 'block';
+                placeholder.style.display = 'none';
+                btn.innerHTML = 'Tắt camera';
+                document.getElementById('btn-capture').disabled = false;
+            } catch {
+                showToast('Không thể truy cập camera', 'error');
+            }
+        }
+    }
+
+    async function captureAndProcess() {
+        if (!cameraStream) return;
+        const video = document.getElementById('camera-video');
+        const overlay = document.getElementById('scan-overlay');
+
+        overlay.classList.add('scanning');
+        setTimeout(() => overlay.classList.remove('scanning'), 1500);
+
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        canvas.getContext('2d').drawImage(video, 0, 0);
+
+        canvas.toBlob(async blob => {
+            capturedImageBlob = blob;
+            // Hiển thị ảnh vừa chụp
+            const reader = new FileReader();
+            reader.onload = e => {
+                document.getElementById('captured-image').src = e.target.result;
+                document.getElementById('captured-image-container').style.display = 'block';
+                document.getElementById('btn-process-camera').disabled = false;
+                showToast('Đã chụp ảnh thành công!', 'success');
+            };
+            reader.readAsDataURL(blob);
+        }, 'image/jpeg', 0.92);
+    }
+
+    function clearCaptured() {
+        capturedImageBlob = null;
+        document.getElementById('captured-image-container').style.display = 'none';
+        document.getElementById('captured-image').src = '';
+        document.getElementById('btn-process-camera').disabled = true;
+    }
+
+    // ── PROCESS FUNCTIONS ──
+    async function processUpload() {
+        if (!uploadedFile) return;
+        const formData = new FormData();
+        formData.append('image', uploadedFile);
+        await runProcess(formData, 'upload');
+    }
+
+    async function processCameraImage() {
+        if (!capturedImageBlob) return;
+        const formData = new FormData();
+        formData.append('image', capturedImageBlob, 'capture.jpg');
+        await runProcess(formData, 'camera');
+    }
+
+    // ── CORE PROCESS ──
+    async function runProcess(formData, source) {
+        let isDone = false;
+        const progSec = source === 'camera'
+            ? document.getElementById('progress-section-cam')
+            : document.getElementById('progress-section');
+        progSec.style.display = 'block';
+
+        const fillId   = source === 'camera' ? 'progress-fill-cam' : 'progress-fill';
+        const textId   = source === 'camera' ? 'progress-text-cam' : 'progress-text';
+        const pctId    = source === 'camera' ? 'progress-pct-cam'  : 'progress-pct';
+
+        const setProgress = (pct, label) => {
+            document.getElementById(fillId).style.width = pct + '%';
+            document.getElementById(textId).textContent = label;
+            document.getElementById(pctId).textContent = pct + '%';
+            if (source === 'upload') {
+                const steps = [
+                    [25, 'step-1'], [50, 'step-2'], [75, 'step-3'], [100, 'step-4']
+                ];
+                steps.forEach(([threshold, id]) => {
+                    const el = document.getElementById(id);
+                    if (pct >= threshold) el.classList.add('done');
+                    else if (pct >= threshold - 25) el.classList.add('active');
+                    else { el.classList.remove('active', 'done'); }
+                });
+            }
+        };
+
+        document.getElementById('btn-process-upload').disabled = true;
+        document.getElementById('btn-process-camera').disabled = true;
+
+        setProgress(10, 'Đang gửi ảnh...');
+
+        try {
+            const fakeProgress = [
+                [25, 'Tiền xử lý (imutils)...', 800],
+                [50, 'Phân tích bố cục (YOLO)...', 3000],
+                [75, 'Nhận diện chữ (VietOCR)...', 8000],
+                [90, 'Xuất file Word...', 2000],
+            ];
+
+            let delay = 600;
+            fakeProgress.forEach(([pct, label, wait]) => {
+                delay += wait;
+                setTimeout(() => {
+                    if (!isDone) setProgress(pct, label); 
+                }, delay);
+            });
+
+            // Gọi API thật
+            const response = await fetch('/process', { method: 'POST', body: formData });
+
+            if (!response.ok) {
+                isDone = true; // Dừng chạy thanh tiến trình ảo
+                const err = await response.json();
+                throw new Error(err.error || 'Server error');
+            }
+
+            const result = await response.json();
+            isDone = true; // API trả về thành công mới chốt cờ isDone
+            setProgress(95, 'Nhận kết quả...');
+
+            if (result.status !== 'success') throw new Error('Xử lý thất bại');
+
+            setProgress(100, 'Hoàn thành!');
+            setTimeout(() => { progSec.style.display = 'none'; }, 800);
+
+            renderResult(result.data);
+            showToast('Xử lý thành công!', 'success');
+
+        } catch (err) {
+            setProgress(0, 'Lỗi: ' + err.message);
+            document.getElementById(fillId).style.background = 'var(--danger)';
+            showToast(err.message, 'error');
+            setTimeout(() => {
+                progSec.style.display = 'none';
+                document.getElementById(fillId).style.background = '';
+                document.getElementById(fillId).style.width = '0%';
+            }, 3000);
+        } finally {
+            document.getElementById('btn-process-upload').disabled = !uploadedFile;
+            document.getElementById('btn-process-camera').disabled = !capturedImageBlob;
+        }
+    }
+
+    // ── RENDER RESULT ──
+    function renderResult(data) {
+        document.getElementById('result-section').style.display = 'block';
+        document.getElementById('result-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+        const ocrDiv = document.getElementById('ocr-text-output');
+        ocrDiv.innerHTML = '';
+        const lines = [];
+        (data.ocr || []).forEach(entry => {
+            (entry.content || []).forEach(line => {
+                if (line.trim()) lines.push(line);
+            });
+        });
+
+        if (lines.length === 0) {
+            ocrDiv.innerHTML = '<span style="color:var(--text-light)">Không nhận diện được văn bản</span>';
+        } else {
+            lines.forEach((line, i) => {
+                const div = document.createElement('div');
+                div.className = 'ocr-line';
+                div.style.animationDelay = (i * 30) + 'ms';
+                div.textContent = line;
+                ocrDiv.appendChild(div);
+            });
+        }
+
+        const totalBoxes = (data.layout || []).reduce((s, e) => s + (e.boxes || []).length, 0);
+        const totalChars = lines.join('').length;
+        document.getElementById('stat-boxes').textContent = totalBoxes;
+        document.getElementById('stat-lines').textContent = lines.length;
+        document.getElementById('stat-chars').textContent = totalChars > 999 ? (totalChars/1000).toFixed(1) + 'k' : totalChars;
+
+        if (data.layout_image_url) {
+            const wrap = document.getElementById('layout-img-wrap');
+            wrap.innerHTML = `<img src="${data.layout_image_url}" alt="layout">`;
+        }
+
+        if (data.docx_base64) {
+            currentDocxB64 = data.docx_base64;
+            currentDocxName = data.docx_filename || 'result.docx';
+            document.getElementById('download-filename').textContent = currentDocxName;
+            document.getElementById('download-meta').textContent =
+                `${lines.length} dòng · job ${data.job_id ? data.job_id.slice(0,8) : '—'}`;
+            document.getElementById('download-bar').style.display = 'flex';
+        }
+    }
+
+    // ── DOWNLOAD ──
+    function downloadDocx() {
+        if (!currentDocxB64) return;
+        const bytes = Uint8Array.from(atob(currentDocxB64), c => c.charCodeAt(0));
+        const blob = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = currentDocxName;
+        a.click();
+        URL.revokeObjectURL(url);
+        showToast('Đang tải ' + currentDocxName, 'success');
+    }
+
+    function copyOCR() {
+        const text = document.getElementById('ocr-text-output').innerText;
+        navigator.clipboard.writeText(text).then(() => showToast('Đã copy văn bản', 'success'));
+    }
+
+    function clearResult() {
+        document.getElementById('result-section').style.display = 'none';
+        document.getElementById('ocr-text-output').innerHTML =
+            '<span style="color:var(--text-light)">Kết quả sẽ hiển thị tại đây...</span>';
+        document.getElementById('layout-img-wrap').innerHTML =
+            '<span style="color:var(--text-light)">Ảnh bố cục sẽ hiện tại đây</span>';
+        document.getElementById('download-bar').style.display = 'none';
+        currentDocxB64 = null; currentDocxName = null;
+        ['stat-boxes','stat-lines','stat-chars'].forEach(id => document.getElementById(id).textContent = '—');
+    }
+
+    function showToast(msg, type = '') {
+        const t = document.getElementById('toast');
+        t.textContent = msg;
+        t.className = 'show ' + type;
+        setTimeout(() => t.className = '', 3000);
+    }
+
+    // Hóng ảnh từ Pi mỗi 1.5 giây
+    setInterval(async () => {
+        try {
+            const res = await fetch('/api/pi_check');
+            const result = await res.json();
+            
+            if (result.has_new) {
+                showToast('Đã nhận ảnh từ Camera Pi! Bắt đầu xử lý...', 'success');
+                
+                // 1. Tự động chuyển Web sang Tab "Upload ảnh"
+                document.querySelector('[data-tab="upload"]').click();
+                
+                // 2. Đổi chuỗi Base64 nhận được thành một File ảnh thật
+                const byteString = atob(result.image_b64);
+                const ab = new ArrayBuffer(byteString.length);
+                const ia = new Uint8Array(ab);
+                for (let i = 0; i < byteString.length; i++) {
+                    ia[i] = byteString.charCodeAt(i);
+                }
+                const blob = new Blob([ab], { type: 'image/jpeg' });
+                const file = new File([blob], "pi_capture.jpg", { type: "image/jpeg" });
+                
+                // 3. Đổ file ảnh vào giao diện Upload (hiện ảnh gốc ra màn hình)
+                setUploadFile(file);
+                
+                // 4. TỰ ĐỘNG BẤM NÚT "XỬ LÝ" ĐỂ CHẠY AI & PROGRESS BAR!
+                setTimeout(() => {
+                    document.getElementById('btn-process-upload').click();
+                }, 500); 
+            }
+        } catch (err) {
+            // Im lặng khi lỗi mạng
+        }
+    }, 1500);
+</script>
+
+</body>
+</html>

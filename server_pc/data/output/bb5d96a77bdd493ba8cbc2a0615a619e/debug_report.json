@@ -1,0 +1,28 @@
+{
+  "job_id": "bb5d96a77bdd493ba8cbc2a0615a619e",
+  "input_filename": "devan2.jpg",
+  "input_saved_as": "capture.jpg",
+  "layout_summary": {
+    "total_boxes": 22,
+    "boxes_by_label": {
+      "plain text": 20,
+      "title": 2
+    },
+    "avg_confidence": 0.5727
+  },
+  "ocr_summary": {
+    "total_lines": 37,
+    "total_chars": 1076
+  },
+  "timings_sec": {
+    "save_image_sec": 0.0015,
+    "preprocess_layout_sec": 0.1391,
+    "preprocess_ocr_sec": 0.1764,
+    "layout_sec": 3.9024,
+    "ocr_sec": 189.6023,
+    "export_docx_sec": 0.0866
+  },
+  "total_elapsed_sec": 193.9523,
+  "docx_filename": "result_bb5d96a77bdd493ba8cbc2a0615a619e.docx",
+  "docx_size_bytes": 37898
+}

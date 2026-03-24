@@ -1,0 +1,27 @@
+{
+  "job_id": "e51bc13026bb4f55967ee346d46c62ab",
+  "input_filename": "doanvan1.png",
+  "input_saved_as": "capture.jpg",
+  "layout_summary": {
+    "total_boxes": 9,
+    "boxes_by_label": {
+      "plain text": 9
+    },
+    "avg_confidence": 0.441
+  },
+  "ocr_summary": {
+    "total_lines": 19,
+    "total_chars": 1426
+  },
+  "timings_sec": {
+    "save_image_sec": 0.0007,
+    "preprocess_layout_sec": 0.067,
+    "preprocess_ocr_sec": 0.0672,
+    "layout_sec": 1.5574,
+    "ocr_sec": 506.8714,
+    "export_docx_sec": 0.0763
+  },
+  "total_elapsed_sec": 508.6673,
+  "docx_filename": "result_e51bc13026bb4f55967ee346d46c62ab.docx",
+  "docx_size_bytes": 37664
+}
