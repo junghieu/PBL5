@@ -1440,40 +1440,73 @@
         setTimeout(() => t.className = '', 3000);
     }
 
-    // Hóng ảnh từ Pi mỗi 1.5 giây
+    // Biến toàn cục để lưu tạm file ảnh từ Pi
+    window.piFile = null;
+
+    // 1. Hàm Polling: Cứ 2 giây hỏi Server một lần xem Pi có gửi ảnh chưa
     setInterval(async () => {
         try {
-            const res = await fetch('/api/pi_check');
-            const result = await res.json();
-            
-            if (result.has_new) {
-                showToast('Đã nhận ảnh từ Camera Pi! Bắt đầu xử lý...', 'success');
+            let response = await fetch('/api/pi_check');
+            let data = await response.json();
+
+            if (data.has_new) {
+                // 1. Lấy Base64 ghép thành chuỗi ảnh hiển thị
+                let imgSrc = "data:image/jpeg;base64," + data.image_b64;
                 
-                // 1. Tự động chuyển Web sang Tab "Upload ảnh"
-                document.querySelector('[data-tab="upload"]').click();
+                // 2. Đưa ảnh vào khung preview của Tab Camera
+                document.getElementById('captured-image').src = imgSrc;
+                document.getElementById('captured-image-container').style.display = 'block';
+                document.getElementById('btn-process-camera').disabled = false;
                 
-                // 2. Đổi chuỗi Base64 nhận được thành một File ảnh thật
-                const byteString = atob(result.image_b64);
-                const ab = new ArrayBuffer(byteString.length);
-                const ia = new Uint8Array(ab);
-                for (let i = 0; i < byteString.length; i++) {
-                    ia[i] = byteString.charCodeAt(i);
-                }
-                const blob = new Blob([ab], { type: 'image/jpeg' });
-                const file = new File([blob], "pi_capture.jpg", { type: "image/jpeg" });
+                // 3. Tự động chuyển giao diện sang Tab Camera (nếu người dùng đang ở tab Upload)
+                document.querySelector('[data-tab="camera"]').click();
                 
-                // 3. Đổ file ảnh vào giao diện Upload (hiện ảnh gốc ra màn hình)
-                setUploadFile(file);
+                // 4. Chuyển Base64 thành File Object để sẵn sàng ném vào luồng AI
+                window.piFile = base64ToFile(data.image_b64, 'pi_capture.jpg');
                 
-                // 4. TỰ ĐỘNG BẤM NÚT "XỬ LÝ" ĐỂ CHẠY AI & PROGRESS BAR!
-                setTimeout(() => {
-                    document.getElementById('btn-process-upload').click();
-                }, 500); 
+                showToast('📸 Đã nhận ảnh mới từ Raspberry Pi!', 'success');
             }
-        } catch (err) {
-            // Im lặng khi lỗi mạng
+        } catch (error) {
+            // Bỏ qua lỗi nếu mạng chập chờn
         }
-    }, 1500);
+    }, 2000);
+
+    // 2. Hàm hỗ trợ chuyển Base64 thành File
+    function base64ToFile(base64Data, filename) {
+        const byteString = atob(base64Data);
+        const int8Array = new Uint8Array(byteString.length);
+        for (let i = 0; i < byteString.length; i++) {
+            int8Array[i] = byteString.charCodeAt(i);
+        }
+        return new File([new Blob([int8Array], { type: 'image/jpeg' })], filename, { type: 'image/jpeg' });
+    }
+
+    // 3. Sửa lại hàm Gửi ảnh xử lý AI (Submit)
+    async function processDocument() {
+        let formData = new FormData();
+        
+        // Lấy ảnh từ input tải lên HOẶC ảnh từ Pi vừa gửi
+        let fileInput = document.getElementById('file-upload').files[0];
+        let fileToUpload = fileInput || window.piFile;
+
+        if (!fileToUpload) {
+            showToast("Vui lòng tải ảnh lên hoặc chờ ảnh từ Pi!", "danger");
+            return;
+        }
+
+        formData.append("image", fileToUpload);
+        
+        showToast("Đang xử lý AI...", "warning");
+        
+        // Gọi API /process của FastAPI
+        let response = await fetch('/process', {
+            method: 'POST',
+            body: formData
+        });
+        
+        let result = await response.json();
+        // Logic xử lý hiển thị kết quả Word và OCR của bạn ở đây...
+    }
 </script>
 
 </body>
