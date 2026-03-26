@@ -68,25 +68,35 @@ def main():
     print(f"==================================================")
 
     while True:
-        # LIÊN TỤC ĐỌC CAMERA để dọn sạch buffer, đảm bảo ảnh luôn mới nhất
         ret, frame = cam.read()
         if not ret:
             print("[ERROR] Mất tín hiệu từ Camera. Đang thử lại...")
             sleep(1)
             continue
-
+        
         # KIỂM TRA NÚT BẤM
         # Nếu nút được nhấn VÀ hệ thống không bị bận (is_processing == False)
         if button.is_pressed and not is_processing:
-            print("\n[ACTION] ĐÃ NHẤN NÚT! Đang chớp khung hình...")
+            # --- CHỐT CHẶN EDGE COMPUTING ---
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            fm = cv2.Laplacian(gray, cv2.CV_64F).var()
+            
+            # Ngưỡng 100 có thể thay đổi tùy thuộc vào độ phân giải và ánh sáng thực tế
+            if fm < 100:
+                print(f"\n[CẢNH BÁO] Ảnh quá mờ (Độ nét: {fm:.2f} < 100). Vui lòng giữ chắc tay/tài liệu và thử lại!")
+                sleep(1.0) # Chống dội phím để người dùng kịp nhận ra
+                continue # Hủy bỏ lệnh chụp, quay lại ngắm tiếp
+            # ----------------------------------------
+
+            print(f"\n[ACTION] ĐÃ NHẤN NÚT! Độ nét đạt: {fm:.2f}. Đang chớp khung hình...")
             is_processing = True
             
             # Copy ảnh ngay khoảnh khắc nhấn nút
             frame_to_send = frame.copy()
-            
+
             # Tạo luồng (thread) riêng để gửi ảnh, giúp vòng lặp camera không bị đứng
             threading.Thread(target=send_image_thread, args=(frame_to_send,)).start()
-            
+
             # Chống dội phím (Debounce) để không bị chụp liên tiếp 2-3 tấm khi lỡ tay nhấn hơi lâu
             sleep(1.0)
 

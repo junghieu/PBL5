@@ -37,8 +37,11 @@ def build_docx_mem(ocr_results: list):
         physical_lines = []
         for line in lines:
             line["items"].sort(key=lambda it: it.get("x",0))
-            page_w = line["items"][0].get("page_w", 1400)
-            gap_thr = max(0.04*page_w, 40)
+            
+            # Lấy chiều rộng thật của ảnh từ OCR truyền sang
+            page_w = line["items"][0].get("page_w", 1400.0) 
+            
+            gap_thr = max(0.04 * page_w, 40)
             text_acc = line["items"][0]["text"]
             for i in range(1, len(line["items"])):
                 prev, cur = line["items"][i-1], line["items"][i]
@@ -50,10 +53,13 @@ def build_docx_mem(ocr_results: list):
             
             label = line["items"][0].get("label", "plain text").lower()
             x_start = line["items"][0].get("x", 0)
+            
+            # Lưu page_w vào dict để truyền xuống bước 3
             physical_lines.append({
                 "text": text_acc.strip(), 
                 "label": label, 
-                "x_start": x_start
+                "x_start": x_start,
+                "page_w": page_w 
             })
 
         # 3. Xuất Word từ các dòng
@@ -61,6 +67,7 @@ def build_docx_mem(ocr_results: list):
             p = doc.add_paragraph(para["text"])
             label = para["label"]
             x_start = para["x_start"]
+            page_w = para["page_w"] # Lấy lại chiều rộng chuẩn của tấm ảnh này
 
             p.paragraph_format.space_after = Pt(4 if label == "plain text" else 8)
 
@@ -71,7 +78,8 @@ def build_docx_mem(ocr_results: list):
                 p.insert_paragraph_before("--- [Bảng biểu] ---")
                 p.alignment = WD_ALIGN_PARAGRAPH.CENTER
             else:
-                indent_inches = max(0, ((x_start - 60) / 1400.0) * 6.5)
+                # THAY THẾ MAGIC NUMBER BẰNG BIẾN ĐỘNG page_w
+                indent_inches = max(0, ((x_start - 60) / page_w) * 6.5)
                 if indent_inches > 0.3:
                     p.paragraph_format.left_indent = Inches(indent_inches)
 
