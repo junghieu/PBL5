@@ -13,7 +13,7 @@ except ImportError:
     exit()
 
 # CẤU HÌNH
-SERVER_URL = os.getenv("SERVER_URL", "http://10.222.177.172:5000/api/pi_upload")
+SERVER_URL = os.getenv("SERVER_URL", "http://10.48.11.172:5000/api/pi_upload")
 BUTTON_PIN = 17
 button = Button(BUTTON_PIN)
 is_processing = False
@@ -59,7 +59,7 @@ def main():
             # --width 2304 --height 1296: Độ phân giải đủ nét cho OCR nhưng không quá nặng để truyền mạng
             try:
                 subprocess.run([
-                    "libcamera-jpeg", 
+                    "rpicam-jpeg", 
                     "-o", temp_img, 
                     "--autofocus-mode", "auto", 
                     "--immediate",
