@@ -2,103 +2,89 @@ import cv2
 import requests
 import os
 import threading
+import subprocess
 from time import sleep
 
-# Import thư viện quản lý chân GPIO của Raspberry Pi
+# Thư viện điều khiển chân GPIO
 try:
     from gpiozero import Button
 except ImportError:
-    print("[CẢNH BÁO] Chưa cài thư viện gpiozero. Hãy chạy lệnh: pip install gpiozero")
+    print("[CẢNH BÁO] Hãy chạy: pip install gpiozero")
     exit()
 
-# Cấu hình địa chỉ Server (Thay bằng IP Laptop của bạn đang chạy Flask)
+# CẤU HÌNH
 SERVER_URL = os.getenv("SERVER_URL", "http://10.222.177.172:5000/api/pi_upload")
-
-# Khai báo nút bấm ở chân GPIO 17
 BUTTON_PIN = 17
 button = Button(BUTTON_PIN)
-
 is_processing = False
 
-def send_image_thread(frame):
-    """Hàm chạy ngầm để nén và gửi ảnh lên Server"""
+def send_image_thread(image_path):
+    """Hàm chạy ngầm để gửi file ảnh lên Server"""
     global is_processing
     try:
-        print("\n[INFO] Đang mã hóa và gửi ảnh lên Server...")
-        encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 98]
-        _, img_encoded = cv2.imencode(".jpg", frame, encode_param)
-        
-        files = {"image": ("image.jpg", img_encoded.tobytes(), "image/jpeg")}
-        
-        # Gửi request lên API của laptop
-        response = requests.post(SERVER_URL, files=files, timeout=60)
+        print("\n[INFO] Đang gửi ảnh chất lượng cao lên Server...")
+        with open(image_path, 'rb') as f:
+            files = {"image": ("image.jpg", f, "image/jpeg")}
+            response = requests.post(SERVER_URL, files=files, timeout=60)
         
         if response.status_code == 200:
-            result = response.json()
-            if result.get("status") == "success":
-                print(f"[SUCCESS] Server đã xử lý xong!")
-            else:
-                print(f"[ERROR] Server báo lỗi: {result}")
+            print("[SUCCESS] Server đã nhận ảnh!")
         else:
-            print(f"[ERROR] Lỗi HTTP: {response.status_code}")
-            
+            print(f"[ERROR] Server báo lỗi: {response.status_code}")
     except Exception as e:
-        print(f"[EXCEPTION] Lỗi kết nối hoặc gửi ảnh: {e}")
+        print(f"[ERROR] Không thể kết nối Server: {e}")
     finally:
-        # Giải phóng cờ để cho phép chụp bức tiếp theo
         is_processing = False
-        print("\n[INFO] SẴN SÀNG! Hãy nhấn nút vật lý để chụp bức tiếp theo.")
+        if os.path.exists(image_path):
+            os.remove(image_path) # Xóa ảnh tạm sau khi gửi
 
 def main():
     global is_processing
-    print("[INFO] Đang khởi động Camera...")
-    
-    # Mở Camera (0 là camera mặc định)
-    cam = cv2.VideoCapture(0)
-    cam.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-    cam.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
-    
-    if not cam.isOpened():
-        print("[ERROR] Không thể mở Camera. Vui lòng kiểm tra lại cáp kết nối!")
-        return
-
-    print(f"==================================================")
-    print(f" HỆ THỐNG PI CLIENT ĐÃ SẴN SÀNG (CHẾ ĐỘ HEADLESS) ")
-    print(f" Vui lòng nhấn nút bấm nối với GPIO {BUTTON_PIN} để chụp ")
-    print(f"==================================================")
+    print("--- HỆ THỐNG CHỤP TÀI LIỆU (CAMERA V3) ---")
+    print(f"Server: {SERVER_URL}")
+    print("Trạng thái: Đang chờ nhấn nút trên chân GPIO 17...")
 
     while True:
-        ret, frame = cam.read()
-        if not ret:
-            print("[ERROR] Mất tín hiệu từ Camera. Đang thử lại...")
-            sleep(1)
-            continue
-        
-        # KIỂM TRA NÚT BẤM
-        # Nếu nút được nhấn VÀ hệ thống không bị bận (is_processing == False)
+        # Nếu nút được nhấn và hệ thống đang rảnh
         if button.is_pressed and not is_processing:
-            # --- CHỐT CHẶN EDGE COMPUTING ---
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            fm = cv2.Laplacian(gray, cv2.CV_64F).var()
-            
-            # Ngưỡng 100 có thể thay đổi tùy thuộc vào độ phân giải và ánh sáng thực tế
-            if fm < 100:
-                print(f"\n[CẢNH BÁO] Ảnh quá mờ (Độ nét: {fm:.2f} < 100). Vui lòng giữ chắc tay/tài liệu và thử lại!")
-                sleep(1.0) # Chống dội phím để người dùng kịp nhận ra
-                continue # Hủy bỏ lệnh chụp, quay lại ngắm tiếp
-            # ----------------------------------------
-
-            print(f"\n[ACTION] ĐÃ NHẤN NÚT! Độ nét đạt: {fm:.2f}. Đang chớp khung hình...")
             is_processing = True
-            
-            # Copy ảnh ngay khoảnh khắc nhấn nút
-            frame_to_send = frame.copy()
+            print("\n[ACTION] Đã nhấn nút! Đang lấy nét và chụp...")
 
-            # Tạo luồng (thread) riêng để gửi ảnh, giúp vòng lặp camera không bị đứng
-            threading.Thread(target=send_image_thread, args=(frame_to_send,)).start()
+            # Đường dẫn ảnh tạm
+            temp_img = "capture_v3.jpg"
 
-            # Chống dội phím (Debounce) để không bị chụp liên tiếp 2-3 tấm khi lỡ tay nhấn hơi lâu
-            sleep(1.0)
+            # GỌI LIBCAMERA-JPEG: 
+            # --autofocus-mode auto: Tự động lấy nét khi chụp
+            # --immediate: Chụp ngay sau khi lấy nét xong
+            # --width 2304 --height 1296: Độ phân giải đủ nét cho OCR nhưng không quá nặng để truyền mạng
+            try:
+                subprocess.run([
+                    "libcamera-jpeg", 
+                    "-o", temp_img, 
+                    "--autofocus-mode", "auto", 
+                    "--immediate",
+                    "--width", "2304", 
+                    "--height", "1296",
+                    "-n" # Không hiện cửa sổ preview để tiết kiệm tài nguyên
+                ], check=True)
+
+                # KIỂM TRA ĐỘ NÉT SƠ BỘ (EDGE COMPUTING)
+                frame = cv2.imread(temp_img)
+                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                fm = cv2.Laplacian(gray, cv2.CV_64F).var()
+
+                if fm < 80: # Ngưỡng độ nét, có thể điều chỉnh
+                    print(f"[CẢNH BÁO] Ảnh bị mờ (Độ nét: {fm:.2f}). Vui lòng chụp lại!")
+                    is_processing = False
+                else:
+                    print(f"[OK] Độ nét đạt {fm:.2f}. Đang gửi...")
+                    threading.Thread(target=send_image_thread, args=(temp_img,)).start()
+
+            except subprocess.CalledProcessError:
+                print("[ERROR] Lỗi khi gọi Camera. Kiểm tra kết nối cáp!")
+                is_processing = False
+
+        sleep(0.1)
 
 if __name__ == "__main__":
     main()

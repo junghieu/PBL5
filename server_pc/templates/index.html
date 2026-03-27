@@ -1440,72 +1440,48 @@
         setTimeout(() => t.className = '', 3000);
     }
 
-    // Biến toàn cục để lưu tạm file ảnh từ Pi
-    window.piFile = null;
-
-    // 1. Hàm Polling: Cứ 2 giây hỏi Server một lần xem Pi có gửi ảnh chưa
+    // 1. Hàm Polling: Cứ 2 giây hỏi Server xem Pi có gửi ảnh chưa
     setInterval(async () => {
         try {
             let response = await fetch('/api/pi_check');
             let data = await response.json();
 
             if (data.has_new) {
-                // 1. Lấy Base64 ghép thành chuỗi ảnh hiển thị
                 let imgSrc = "data:image/jpeg;base64," + data.image_b64;
                 
-                // 2. Đưa ảnh vào khung preview của Tab Camera
+                // Hiển thị ảnh lên khung Camera
                 document.getElementById('captured-image').src = imgSrc;
                 document.getElementById('captured-image-container').style.display = 'block';
+                
+                // Kích hoạt nút Xử lý
                 document.getElementById('btn-process-camera').disabled = false;
                 
-                // 3. Tự động chuyển giao diện sang Tab Camera (nếu người dùng đang ở tab Upload)
+                // Tự động nhảy sang tab Camera để người dùng thấy ảnh
                 document.querySelector('[data-tab="camera"]').click();
                 
-                // 4. Chuyển Base64 thành File Object để sẵn sàng ném vào luồng AI
-                window.piFile = base64ToFile(data.image_b64, 'pi_capture.jpg');
+                // Lưu thành Blob để hàm processCameraImage() hiện tại của bạn lấy đi chạy AI
+                capturedImageBlob = base64ToBlob(data.image_b64, 'image/jpeg');
                 
-                showToast('📸 Đã nhận ảnh mới từ Raspberry Pi!', 'success');
+                showToast('📸 Đã nhận ảnh siêu nét từ Pi Cam V3!', 'success');
             }
         } catch (error) {
             // Bỏ qua lỗi nếu mạng chập chờn
         }
     }, 2000);
 
-    // 2. Hàm hỗ trợ chuyển Base64 thành File
-    function base64ToFile(base64Data, filename) {
-        const byteString = atob(base64Data);
-        const int8Array = new Uint8Array(byteString.length);
-        for (let i = 0; i < byteString.length; i++) {
-            int8Array[i] = byteString.charCodeAt(i);
+    // 2. Hàm hỗ trợ chuyển Base64 thành Blob tương thích
+    function base64ToBlob(base64Data, contentType) {
+        const byteCharacters = atob(base64Data);
+        const byteArrays = [];
+        for (let offset = 0; offset < byteCharacters.length; offset += 512) {
+            const slice = byteCharacters.slice(offset, offset + 512);
+            const byteNumbers = new Array(slice.length);
+            for (let i = 0; i < slice.length; i++) {
+                byteNumbers[i] = slice.charCodeAt(i);
+            }
+            byteArrays.push(new Uint8Array(byteNumbers));
         }
-        return new File([new Blob([int8Array], { type: 'image/jpeg' })], filename, { type: 'image/jpeg' });
-    }
-
-    // 3. Sửa lại hàm Gửi ảnh xử lý AI (Submit)
-    async function processDocument() {
-        let formData = new FormData();
-        
-        // Lấy ảnh từ input tải lên HOẶC ảnh từ Pi vừa gửi
-        let fileInput = document.getElementById('file-upload').files[0];
-        let fileToUpload = fileInput || window.piFile;
-
-        if (!fileToUpload) {
-            showToast("Vui lòng tải ảnh lên hoặc chờ ảnh từ Pi!", "danger");
-            return;
-        }
-
-        formData.append("image", fileToUpload);
-        
-        showToast("Đang xử lý AI...", "warning");
-        
-        // Gọi API /process của FastAPI
-        let response = await fetch('/process', {
-            method: 'POST',
-            body: formData
-        });
-        
-        let result = await response.json();
-        // Logic xử lý hiển thị kết quả Word và OCR của bạn ở đây...
+        return new Blob(byteArrays, { type: contentType });
     }
 </script>
 

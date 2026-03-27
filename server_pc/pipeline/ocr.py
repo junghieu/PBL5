@@ -24,13 +24,23 @@ except ModuleNotFoundError:
     from vietocr.tool.predictor import Predictor
     from vietocr.tool.config import Cfg
 
-
 def load_ocr_model():
+    # 1. Khai báo base config (BẮT BUỘC phải khớp với cấu trúc đã dùng để train)
+    # Ví dụ: Nếu lúc train dùng vgg_transformer thì đổi 'vgg_seq2seq' thành 'vgg_transformer'
     config = Cfg.load_config_from_name('vgg_seq2seq')
-    config['device'] = 'cpu'
-    config['predictor']['beamsearch'] = False  # nhanh hơn, giảm treo
+    
+    # 2. Trỏ đường dẫn đến file weights (.pth) mà nhóm bạn vừa train xong
+    # model_name = "ten_file_train_xong_cua_ban.pth" 
+    # full_model_path = str(Path(__file__).resolve().parent.parent / "weights" / model_name)
+    
+    # 3. Ghi đè đường dẫn weights mặc định bằng weights custom của bạn
+    # config['weights'] = full_model_path
+    
+    # 4. Các cấu hình tối ưu chạy trên máy tính
+    config['device'] = 'cpu' # Chuyển thành 'cuda:0' nếu máy Server có Card màn hình Nvidia
+    config['predictor']['beamsearch'] = False  # Giữ False để chạy nhanh hơn, giảm nguy cơ treo máy khi gặp ảnh khó
+    
     return Predictor(config)
-
 
 def _non_max_suppress_boxes(boxes, iou_thresh=0.25, iom_thresh=0.5):
     """Khử các hộp đè lên nhau bằng IoU + IoM"""
