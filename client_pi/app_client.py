@@ -62,7 +62,7 @@ def main():
                     "rpicam-jpeg", 
                     "-o", temp_img, 
                     "--autofocus-mode", "auto", 
-                    "--immediate",
+                    "--timeout", "1000",   # Cho camera 1 giây để lấy nét và đo sáng
                     "--width", "2304", 
                     "--height", "1296",
                     "-n" # Không hiện cửa sổ preview để tiết kiệm tài nguyên

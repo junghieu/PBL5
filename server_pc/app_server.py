@@ -1,6 +1,7 @@
 from fastapi import FastAPI, File, UploadFile, Request
 from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
+from contextlib import asynccontextmanager
 import uvicorn
 import base64, uuid, shutil, os, json, time
 from pathlib import Path
@@ -13,30 +14,43 @@ import numpy as np
 import io
 
 from pipeline.layout import run_layout_mem, load_layout_model
-from pipeline.preprocess import preprocess_for_layout, preprocess_for_ocr
+from pipeline.preprocess import fix_image_orientation, preprocess_for_layout, preprocess_for_ocr
 from pipeline.ocr import run_ocr_mem, load_ocr_model
 from pipeline.export_word import build_docx_mem
 
-app = FastAPI(title="DocScan AI API")
 BASE_DIR = Path(__file__).resolve().parent
 
-# Khởi tạo render HTML (Dùng đường dẫn tuyệt đối chống lỗi)
+# Khởi tạo render HTML
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
-# ── Load model 1 lần khi server khởi động ──
-print("[INIT] Đang tải model YOLO...")
-layout_model = load_layout_model()
-print("[INIT] Đang tải model VietOCR...")
-ocr_model = load_ocr_model()
-print("[INIT] Sẵn sàng!")
-
-# 2. KHỞI TẠO KHÓA TOÀN CỤC CHO AI
+# 1. KHAI BÁO BIẾN GLOBAL (Chưa tải model vội)
+layout_model = None
+ocr_model = None
 ai_lock = threading.Lock()
+
+# 2. HÀM LIFESPAN CỦA FASTAPI (Chỉ tải model 1 lần duy nhất)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global layout_model, ocr_model
+    print("[INIT] Đang tải model YOLO vào VRAM...")
+    layout_model = load_layout_model()
+    
+    print("[INIT] Đang tải model VietOCR vào VRAM...")
+    ocr_model = load_ocr_model()
+    
+    print("[INIT] Sẵn sàng phục vụ!")
+    yield  # Server FastAPI bắt đầu chạy tại đây
+    
+    print("[SHUTDOWN] Đang dọn dẹp RAM và VRAM...")
+    layout_model = None
+    ocr_model = None
+
+# 3. KHỞI TẠO APP VỚI LIFESPAN
+app = FastAPI(title="DocScan AI API", lifespan=lifespan)
 
 # ── Thư mục dữ liệu ──
 OUTPUT_FOLDER = BASE_DIR / "data" / "output"
 OUTPUT_FOLDER.mkdir(parents=True, exist_ok=True)
-
 
 # ══════════════════════════════════════════
 #  ROUTES
@@ -47,18 +61,15 @@ async def index(request: Request):
     """Trả về trang Web UI."""
     return templates.TemplateResponse(request=request, name="index.html")
 
-
 @app.get('/health')
 async def health():
     """Endpoint để frontend kiểm tra server có online không."""
     return JSONResponse(content={"status": "ok"})
 
-
 @app.post('/process')
 def process(image: UploadFile = File(...)):
-    """[SYNC] Hàm chạy AI nặng. Viết bằng `def` để FastAPI ném vào Threadpool."""
+    """[SYNC] Hàm chạy AI nặng."""
     try:
-        started_at = time.perf_counter()
         timings = {}
         job_id = uuid.uuid4().hex
 
@@ -73,8 +84,13 @@ def process(image: UploadFile = File(...)):
 
         # 2. TIỀN XỬ LÝ
         t0 = time.perf_counter()
-        img_layout = preprocess_for_layout(img_bgr.copy())
-        img_ocr = preprocess_for_ocr(img_bgr.copy())
+
+        # Xoay ảnh chuẩn 1 lần duy nhất dùng chung cho cả 2 luồng
+        img_bgr_fixed = fix_image_orientation(img_bgr)
+        
+        # Đưa ảnh đã xoay chuẩn vào các luồng xử lý riêng biệt
+        img_layout = preprocess_for_layout(img_bgr_fixed.copy())
+        img_ocr = preprocess_for_ocr(img_bgr_fixed.copy())
         timings["preprocess_sec"] = round(time.perf_counter() - t0, 4)
 
         # <-- 3. BỌC LOGIC AI VÀO TRONG LOCK -->
@@ -128,9 +144,6 @@ def process(image: UploadFile = File(...)):
         return JSONResponse(status_code=500, content={"status": "error", "error": str(e)})
 
 
-# Biến toàn cục để giữ tạm ảnh gốc từ Pi
-pi_raw_image_buffer = None
-
 # Thay vì dùng biến đơn, ta dùng Dictionary lưu ảnh theo ID
 pi_buffers = {}
 
@@ -166,4 +179,4 @@ def find_free_port(start_port=5000):
 if __name__ == '__main__':
     port = find_free_port(5000)
     # Khởi động bằng Uvicorn
-    uvicorn.run("app_fastapi:app", host="0.0.0.0", port=port, reload=True)
+    uvicorn.run("app_server:app", host="0.0.0.0", port=port, reload=True)

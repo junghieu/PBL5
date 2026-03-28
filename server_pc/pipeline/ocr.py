@@ -1,6 +1,7 @@
 import sys
 import os
 import cv2
+import torch
 import numpy as np
 from pathlib import Path
 from PIL import Image
@@ -37,7 +38,8 @@ def load_ocr_model():
     # config['weights'] = full_model_path
     
     # 4. Các cấu hình tối ưu chạy trên máy tính
-    config['device'] = 'cpu' # Chuyển thành 'cuda:0' nếu máy Server có Card màn hình Nvidia
+    config['device'] = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+    #config['device'] = 'cpu' # Chuyển thành 'cuda:0' nếu máy Server có Card màn hình Nvidia
     config['predictor']['beamsearch'] = False  # Giữ False để chạy nhanh hơn, giảm nguy cơ treo máy khi gặp ảnh khó
     
     return Predictor(config)
@@ -138,7 +140,6 @@ def _predict_best_text(ocr, crop):
     except Exception:
         return ""
 
-
 def _filter_pred(pred_text, w_c):
     if not pred_text:
         return False
@@ -147,17 +148,19 @@ def _filter_pred(pred_text, w_c):
     alpha = sum(ch.isalpha() for ch in pred_text)
     if alpha / max(1, len(pred_text)) < 0.5:
         return False
-    if len(pred_text) > 4 and (w_c / len(pred_text)) < 3.5:
-        return False
-    if len(pred_text) < 12 and pred_text.isupper():  # loại rác ALLCAPS ngắn
+    # Đã xóa dòng so sánh w_c / len < 3.5 gây lỗi trên ảnh nhỏ
+    if len(pred_text) < 12 and pred_text.isupper():  # loại rác ALLCAPS ngắn (<12 ký tự) thường là mã lỗi, ký hiệu, hoặc kết quả OCR sai
         return False
     return True
-
 
 def _split_block_into_lines(crop_img):
     h_img, w_img = crop_img.shape[:2]
     # Tăng giới hạn chiều cao tối thiểu lên 30 để bỏ qua các vệt rác quá mỏng
-    if h_img < 30: 
+    # if h_img < 30:
+    #     return [{"image": crop_img, "x_local": 0, "y_local": 0}]
+
+    # Dùng tỷ lệ: Nếu khối ảnh quá bẹp (chiều cao < 2% chiều rộng hoặc quá nhỏ)
+    if h_img < (w_img * 0.02):
         return [{"image": crop_img, "x_local": 0, "y_local": 0}]
 
     gray = cv2.cvtColor(crop_img, cv2.COLOR_BGR2GRAY)
@@ -167,22 +170,27 @@ def _split_block_into_lines(crop_img):
     
     # SỬA LỖI ẢO GIÁC: Bỏ Otsu, dùng Threshold cố định (160)
     # Đảm bảo các vùng khoảng trắng giấy không bị biến thành nhiễu đen
-    _, thresh = cv2.threshold(blur, 160, 255, cv2.THRESH_BINARY_INV)
+    #_, thresh = cv2.threshold(blur, 160, 255, cv2.THRESH_BINARY_INV)
+    _, thresh = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
 
-    # SỬA LỖI DÍNH DÒNG IN NGHIÊNG: Chiều dọc chỉ để 1 pixel
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (30, 1))
+    # Chiều dài Kernel phụ thuộc vào chiều rộng ảnh (khoảng 3% chiều rộng để nối chữ cái)
+    kernel_width = max(5, int(w_img * 0.03)) 
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (kernel_width, 1))
     dilated = cv2.dilate(thresh, kernel, iterations=1)
     
     cnts, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
     line_boxes = []
+    # Kích thước "hạt bụi" tỷ lệ thuận với kích thước vùng ảnh
+    min_h = max(5, int(h_img * 0.05))
+    min_w = max(5, int(w_img * 0.01))
+
     for c in cnts:
         x, y, w, h = cv2.boundingRect(c)
-        # Nâng bộ lọc lên > 10 để xóa sổ toàn bộ "hạt bụi" gây ra chữ ảo
-        if h > 10 and w > 10:
+        if h > min_h and w > min_w:
             line_boxes.append((x, y, w, h))
             
-    if not line_boxes: 
+    if not line_boxes:
         return [{"image": crop_img, "x_local": 0, "y_local": 0}]
         
     line_boxes = sorted(line_boxes, key=lambda b: b[1])
@@ -195,7 +203,7 @@ def _split_block_into_lines(crop_img):
         cy = box[1] + box[3]/2.0
         placed = False
         for group in groups:
-            if abs(group['cy'] - cy) < dynamic_thresh: 
+            if abs(group['cy'] - cy) < dynamic_thresh:
                 group['boxes'].append(box)
                 group['cy'] = (group['cy'] * (len(group['boxes'])-1) + cy) / len(group['boxes'])
                 placed = True
@@ -207,101 +215,106 @@ def _split_block_into_lines(crop_img):
         final_boxes.extend(sorted(group['boxes'], key=lambda b: b[0]))
 
     lines = []
-    for (x, y, w, h) in final_boxes: 
-        pad_x, pad_y = 5, 8 
+    for (x, y, w, h) in final_boxes:
+        # Padding động theo kích thước của dòng cắt được
+        pad_x = max(2, int(w * 0.02))
+        pad_y = max(2, int(h * 0.10))
         y1, y2 = max(0, y - pad_y), min(h_img, y + h + pad_y)
         x1, x2 = max(0, x - pad_x), min(w_img, x + w + pad_x)
         lines.append({"image": crop_img[y1:y2, x1:x2], "x_local": x1, "y_local": y1})
     return lines
 
 def _fallback_full_image(img, ocr):
-    """Dự phòng toàn ảnh, có lọc rác."""
+    """Dự phòng toàn ảnh, lọc rác bằng tỷ lệ ký tự hợp lệ."""
     pred = ""
     try:
         pred = ocr.predict(Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))).strip()
     except Exception:
         return ""
-    if len(pred) < 12:
+    
+    if len(pred) < 3: # Chỉ bỏ qua nếu quá ngắn (< 3 ký tự)
         return ""
-    if pred.isupper():
+        
+    # Lọc rác: Nếu số lượng chữ cái/số quá ít so với các ký tự đặc biệt (!@#$%...)
+    valid_chars = sum(ch.isalnum() for ch in pred)
+    if valid_chars / len(pred) < 0.4:
         return ""
-    if not any(ch.isalpha() for ch in pred):
-        return ""
+        
     return " ".join(pred.split())
 
 
-def run_ocr(pre_dir: Path, layout_results: list, output_dir: Path, predictor=None):
-    output_dir.mkdir(parents=True, exist_ok=True)
-    ocr = predictor if predictor is not None else load_ocr_model()
-    TEXT_LABELS = {
-        "text", "title", "plain text", "plaintext", "paragraph",
-        "header", "footer", "caption", "list", "footnote", "formula", "table"
-    }
-    all_results = []
+# def run_ocr(pre_dir: Path, layout_results: list, output_dir: Path, predictor=None):
+#     output_dir.mkdir(parents=True, exist_ok=True)
+#     ocr = predictor if predictor is not None else load_ocr_model()
+#     TEXT_LABELS = {
+#         "text", "title", "plain text", "plaintext", "paragraph",
+#         "header", "footer", "caption", "list", "footnote", "formula", "table"
+#     }
+#     all_results = []
 
-    for entry in layout_results:
-        img_path = pre_dir / entry["image"]
-        img = cv2.imread(str(img_path))
-        if img is None:
-            continue
-        page_h, page_w = img.shape[:2]
+#     for entry in layout_results:
+#         img_path = pre_dir / entry["image"]
+#         img = cv2.imread(str(img_path))
+#         if img is None:
+#             continue
+#         page_h, page_w = img.shape[:2]
 
-        candidate_boxes = [
-            b for b in entry["boxes"]
-            if str(b.get("label", "")).strip().lower() in TEXT_LABELS
-        ]
-        candidate_boxes = sorted(candidate_boxes, key=lambda b: (int(b["bbox"][1]), int(b["bbox"][0])))
+#         candidate_boxes = [
+#             b for b in entry["boxes"]
+#             if str(b.get("label", "")).strip().lower() in TEXT_LABELS
+#         ]
+#         candidate_boxes = sorted(candidate_boxes, key=lambda b: (int(b["bbox"][1]), int(b["bbox"][0])))
 
-        boxes = _non_max_suppress_boxes(candidate_boxes, iou_thresh=0.25, iom_thresh=0.5)
-        boxes = _merge_boxes_into_lines(boxes)
+#         boxes = _non_max_suppress_boxes(candidate_boxes, iou_thresh=0.25, iom_thresh=0.5)
+#         boxes = _merge_boxes_into_lines(boxes)
 
-        text_lines, content_with_labels = [], []
+#         text_lines, content_with_labels = [], []
 
-        for box in boxes:
-            x1, y1, x2, y2 = [int(v) for v in box["bbox"]]
-            pad_x, pad_y = 18, 8
-            x1 = max(0, x1 - pad_x); y1 = max(0, y1 - pad_y)
-            x2 = min(img.shape[1], x2 + pad_x); y2 = min(img.shape[0], y2 + pad_y)
-            crop = img[y1:y2, x1:x2]
-            if crop.size == 0:
-                continue
+#         for box in boxes:
+#             x1, y1, x2, y2 = [int(v) for v in box["bbox"]]
+#             pad_x, pad_y = 18, 8
+#             x1 = max(0, x1 - pad_x); y1 = max(0, y1 - pad_y)
+#             x2 = min(img.shape[1], x2 + pad_x); y2 = min(img.shape[0], y2 + pad_y)
+#             crop = img[y1:y2, x1:x2]
+#             if crop.size == 0:
+#                 continue
 
-            label = str(box.get("label", "")).strip().lower()
-            line_data_list = _split_block_into_lines(crop)
+#             label = str(box.get("label", "")).strip().lower()
+#             line_data_list = _split_block_into_lines(crop)
 
-            for l_data in line_data_list:
-                l_crop = l_data["image"]
-                h_c, w_c = l_crop.shape[:2]
-                if w_c < 10 or h_c < 10:
-                    continue
+#             for l_data in line_data_list:
+#                 l_crop = l_data["image"]
+#                 h_c, w_c = l_crop.shape[:2]
+#                 if w_c < 10 or h_c < 10:
+#                     continue
 
-                pred_text = _predict_best_text(ocr, l_crop)
-                if not _filter_pred(pred_text, w_c) or _is_duplicate_text(pred_text, text_lines):
-                    continue
+#                 pred_text = _predict_best_text(ocr, l_crop)
+#                 if not _filter_pred(pred_text, w_c) or _is_duplicate_text(pred_text, text_lines):
+#                     continue
 
-                text_lines.append(pred_text)
-                content_with_labels.append({
-                    "label": label, "text": pred_text,
-                    "x": x1 + l_data["x_local"], "y": y1 + l_data["y_local"],
-                    "w": w_c, "h": h_c,
-                    "page_w": page_w, "page_h": page_h
-                })
+#                 text_lines.append(pred_text)
+#                 content_with_labels.append({
+#                     "label": label, "text": pred_text,
+#                     "x": x1 + l_data["x_local"], "y": y1 + l_data["y_local"],
+#                     "w": w_c, "h": h_c,
+#                     "page_w": page_w, "page_h": page_h
+#                 })
 
-        # Fallback toàn ảnh nếu hoàn toàn không có dòng nào
-        if not text_lines:
-            pred_text = _fallback_full_image(img, ocr)
-            if pred_text:
-                text_lines.append(pred_text)
-                content_with_labels.append({
-                    "label": "plain text", "text": pred_text,
-                    "page_w": page_w, "page_h": page_h
-                })
+#         # Fallback toàn ảnh nếu hoàn toàn không có dòng nào
+#         if not text_lines:
+#             pred_text = _fallback_full_image(img, ocr)
+#             if pred_text:
+#                 text_lines.append(pred_text)
+#                 content_with_labels.append({
+#                     "label": "plain text", "text": pred_text,
+#                     "page_w": page_w, "page_h": page_h
+#                 })
 
-        txt_path = output_dir / f"{img_path.stem}.txt"
-        txt_path.write_text("\n".join(text_lines), encoding="utf-8")
-        all_results.append({"image": entry["image"], "content": text_lines, "content_with_labels": content_with_labels})
+#         txt_path = output_dir / f"{img_path.stem}.txt"
+#         txt_path.write_text("\n".join(text_lines), encoding="utf-8")
+#         all_results.append({"image": entry["image"], "content": text_lines, "content_with_labels": content_with_labels})
 
-    return all_results
+#     return all_results
 
 
 def run_ocr_mem(img_array, boxes_list, predictor):
@@ -324,10 +337,16 @@ def run_ocr_mem(img_array, boxes_list, predictor):
 
     for box in boxes:
         x1, y1, x2, y2 = [int(v) for v in box["bbox"]]
-        pad_x, pad_y = 18, 8
+        
+        # Dùng tỷ lệ: mở rộng thêm 2% chiều rộng và 10% chiều cao của box
+        box_w, box_h = max(1, x2 - x1), max(1, y2 - y1)
+        pad_x = int(box_w * 0.02)
+        pad_y = int(box_h * 0.10)
+        
         x1 = max(0, x1 - pad_x); y1 = max(0, y1 - pad_y)
         x2 = min(img_array.shape[1], x2 + pad_x); y2 = min(img_array.shape[0], y2 + pad_y)
         crop = img_array[y1:y2, x1:x2]
+
         if crop.size == 0:
             continue
 

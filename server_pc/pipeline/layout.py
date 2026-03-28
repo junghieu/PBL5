@@ -35,44 +35,47 @@ def load_layout_model():
     full_model_path = str(Path(__file__).resolve().parent.parent / "weights" / model_name)
     return YOLOv10(full_model_path)
 
-def run_layout(input_dir: Path, output_dir: Path, model=None, conf: float = 0.15, debug=False):  # thêm model=None
-    if model is None:
-        model = load_layout_model()  # fallback khi gọi từ run_pipeline.py
-    output_dir.mkdir(parents=True, exist_ok=True)
-    files = sorted([p for p in input_dir.iterdir() if p.suffix.lower() in {".jpg", ".png", ".jpeg"}])
-    layout_results = []
-    for p in files:
-        results = model.predict(str(p), imgsz=1024, conf=conf)
-        res = results[0]
-        items = []
-        if res.boxes is not None:
-            for box in res.boxes:
-                bbox = box.xyxy[0].cpu().numpy().tolist()
-                cls_id = int(box.cls[0])
-                label = res.names[cls_id]
-                score = float(box.conf[0]) if hasattr(box, "conf") else 0.0
-                items.append({"bbox": bbox, "label": label, "score": score})
+# def run_layout(input_dir: Path, output_dir: Path, model=None, conf: float = 0.15, debug=False):  # thêm model=None
+#     if model is None:
+#         model = load_layout_model()  # fallback khi gọi từ run_pipeline.py
+#     output_dir.mkdir(parents=True, exist_ok=True)
+#     files = sorted([p for p in input_dir.iterdir() if p.suffix.lower() in {".jpg", ".png", ".jpeg"}])
+#     layout_results = []
+#     for p in files:
+#         results = model.predict(str(p), imgsz=1024, conf=conf)
+#         res = results[0]
+#         items = []
+#         if res.boxes is not None:
+#             for box in res.boxes:
+#                 bbox = box.xyxy[0].cpu().numpy().tolist()
+#                 cls_id = int(box.cls[0])
+#                 label = res.names[cls_id]
+#                 score = float(box.conf[0]) if hasattr(box, "conf") else 0.0
+#                 items.append({"bbox": bbox, "label": label, "score": score})
         
-        # XỬ LÝ CỜ DEBUG
-        if debug:
-            # ĐỌC ẢNH TỪ ĐƯỜNG DẪN p
-            annotated_img = cv2.imread(str(p))
-            for item in items:
-                x1, y1, x2, y2 = [int(v) for v in item["bbox"]]
-                cv2.rectangle(annotated_img, (x1, y1), (x2, y2), (0, 0, 255), 2)
-                cv2.putText(annotated_img, f'{item["label"]} {item["score"]:.2f}', 
-                            (x1, max(10, y1 - 5)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-        else:
-            annotated_img = res.plot()
+#         # XỬ LÝ CỜ DEBUG
+#         if debug:
+#             # ĐỌC ẢNH TỪ ĐƯỜNG DẪN p
+#             annotated_img = cv2.imread(str(p))
+#             for item in items:
+#                 x1, y1, x2, y2 = [int(v) for v in item["bbox"]]
+#                 cv2.rectangle(annotated_img, (x1, y1), (x2, y2), (0, 0, 255), 2)
+#                 cv2.putText(annotated_img, f'{item["label"]} {item["score"]:.2f}', 
+#                             (x1, max(10, y1 - 5)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+#         else:
+#             annotated_img = res.plot()
 
-        cv2.imwrite(str(output_dir / f"{p.stem}_layout.jpg"), annotated_img)
-        layout_results.append({"image": p.name, "boxes": items})
-        print(f"[LAYOUT] Xong: {p.name}")
-    return layout_results
+#         cv2.imwrite(str(output_dir / f"{p.stem}_layout.jpg"), annotated_img)
+#         layout_results.append({"image": p.name, "boxes": items})
+#         print(f"[LAYOUT] Xong: {p.name}")
+#     return layout_results
 
 def run_layout_mem(img_array, model, conf=0.15, debug=False):
     """Chạy layout trực tiếp trên mảng ảnh trong RAM"""
-    results = model.predict(img_array, imgsz=1024, conf=conf)
+    # results = model.predict(img_array, imgsz=1024, conf=conf, device=0) # Thêm device=0 để ưu tiên GPU nếu có, giảm tải cho CPU khi xử lý ảnh lớn
+    # results = model.predict(img_array, imgsz=1024, conf=conf)
+    device_str = 0 if torch.cuda.is_available() else 'cpu'
+    results = model.predict(img_array, imgsz=1024, conf=conf, device=device_str)
     res = results[0]
     items = []
     
