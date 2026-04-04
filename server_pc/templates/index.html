@@ -920,30 +920,17 @@
             <!-- TAB 1: CAMERA -->
             <div class="tab-content active" id="tab-camera">
                 <div class="card-body">
-                    <div id="camera-container">
-                        <video id="camera-video" autoplay muted playsinline></video>
-                        <div class="camera-placeholder" id="camera-placeholder">
-                            <div class="camera-placeholder-icon">📷</div>
-                            <div class="camera-placeholder-text">
-                                <p>Camera chưa bật</p>
-                            </div>
-                        </div>
-                        <div id="scan-overlay">
-                            <div class="scan-line"></div>
-                            <div class="scan-corner tl"></div>
-                            <div class="scan-corner tr"></div>
-                            <div class="scan-corner bl"></div>
-                            <div class="scan-corner br"></div>
-                        </div>
+                    
+                    <div class="pi-stream-container" style="width: 100%; aspect-ratio: 4/3; background: #000; border-radius: 12px; overflow: hidden; border: 2px solid var(--border); margin-bottom: 16px; display: flex; align-items: center; justify-content: center;">
+                        <img id="pi-live-stream" src="" alt="Đang chờ luồng Live Stream từ Pi..." style="width: 100%; height: 100%; object-fit: cover; display: block;">
                     </div>
 
-                    <!-- Ảnh vừa chụp -->
                     <div id="captured-image-container">
                         <img id="captured-image" src="" alt="Ảnh vừa chụp">
                         <button class="captured-clear" onclick="clearCaptured()" title="Xóa">✕</button>
                     </div>
-
-                    <div id="progress-section-cam">
+                    
+                    <div id="progress-section-cam" style="display: none; margin-top: 16px;">
                         <div class="progress-label">
                             <span id="progress-text-cam">Đang xử lý...</span>
                             <span id="progress-pct-cam">0%</span>
@@ -951,20 +938,19 @@
                         <div class="progress-bar">
                             <div class="progress-fill" id="progress-fill-cam"></div>
                         </div>
+                        <div class="progress-steps">
+                            <div class="step" id="cam-step-1">Tiền xử lý</div>
+                            <div class="step" id="cam-step-2">Layout</div>
+                            <div class="step" id="cam-step-3">OCR</div>
+                            <div class="step" id="cam-step-4">Word</div>
+                        </div>
                     </div>
 
                     <div class="btn-row">
-                        <button class="btn btn-secondary" id="btn-cam-toggle" onclick="toggleCamera()">
-                            Bật camera
-                        </button>
-                        <button class="btn btn-primary" id="btn-capture" onclick="captureAndProcess()" disabled>
-                            Chụp
+                        <button class="btn btn-primary" id="btn-process-camera" onclick="processCameraImage()" disabled style="width: 100%;">
+                            Xử lý ảnh vừa chụp
                         </button>
                     </div>
-
-                    <button class="btn btn-primary btn-full" id="btn-process-camera" onclick="processCameraImage()" disabled style="margin-top: 12px;">
-                        Xử lý ảnh
-                    </button>
                 </div>
             </div>
 
@@ -1287,17 +1273,21 @@
             document.getElementById(fillId).style.width = pct + '%';
             document.getElementById(textId).textContent = label;
             document.getElementById(pctId).textContent = pct + '%';
-            if (source === 'upload') {
-                const steps = [
-                    [25, 'step-1'], [50, 'step-2'], [75, 'step-3'], [100, 'step-4']
-                ];
-                steps.forEach(([threshold, id]) => {
-                    const el = document.getElementById(id);
-                    if (pct >= threshold) el.classList.add('done');
-                    else if (pct >= threshold - 25) el.classList.add('active');
-                    else { el.classList.remove('active', 'done'); }
-                });
-            }
+            
+            // XÓA ĐIỀU KIỆN if (source === 'upload') CŨ ĐI
+            // Tự động phân luồng ID bước (cam-step hoặc step) tùy theo Tab đang mở
+            const prefix = source === 'camera' ? 'cam-step-' : 'step-';
+            const steps = [
+                [25, prefix + '1'], [50, prefix + '2'], [75, prefix + '3'], [100, prefix + '4']
+            ];
+            
+            steps.forEach(([threshold, id]) => {
+                const el = document.getElementById(id);
+                if (!el) return; // An toàn
+                if (pct >= threshold) el.classList.add('done');
+                else if (pct >= threshold - 25) el.classList.add('active');
+                else { el.classList.remove('active', 'done'); }
+            });
         };
 
         document.getElementById('btn-process-upload').disabled = true;
@@ -1306,43 +1296,61 @@
         setProgress(10, 'Đang gửi ảnh...');
 
         try {
-            const fakeProgress = [
-                [25, 'Tiền xử lý (imutils)...', 800],
-                [50, 'Phân tích bố cục (YOLO)...', 3000],
-                [75, 'Nhận diện chữ (VietOCR)...', 8000],
-                [90, 'Xuất file Word...', 2000],
-            ];
+            // ── BƯỚC 1: Gửi ảnh lên server, nhận job_id ngay lập tức ──
+            setProgress(10, 'Đang gửi ảnh lên server...');
+            const submitRes = await fetch('/process', { method: 'POST', body: formData });
 
-            let delay = 600;
-            fakeProgress.forEach(([pct, label, wait]) => {
-                delay += wait;
-                setTimeout(() => {
-                    if (!isDone) setProgress(pct, label); 
-                }, delay);
-            });
-
-            // Gọi API thật
-            const response = await fetch('/process', { method: 'POST', body: formData });
-
-            if (!response.ok) {
-                isDone = true; // Dừng chạy thanh tiến trình ảo
-                const err = await response.json();
+            if (!submitRes.ok) {
+                const err = await submitRes.json();
                 throw new Error(err.error || 'Server error');
             }
 
-            const result = await response.json();
-            isDone = true; // API trả về thành công mới chốt cờ isDone
-            setProgress(95, 'Nhận kết quả...');
+            const { job_id, status: submitStatus } = await submitRes.json();
+            if (!job_id) throw new Error('Server không trả về job_id');
 
-            if (result.status !== 'success') throw new Error('Xử lý thất bại');
+            setProgress(20, 'Ảnh đã vào hàng chờ xử lý...');
 
-            setProgress(100, 'Hoàn thành!');
-            setTimeout(() => { progSec.style.display = 'none'; }, 800);
+            // ── BƯỚC 2: Polling /result/{job_id} cho đến khi có kết quả ──
+            // Map trạng thái → % thanh tiến trình để hiển thị thật
+            const statusMap = {
+                'queued':     [20, 'Đang chờ trong hàng...'],
+                'processing': [55, 'AI đang xử lý (YOLO + VietOCR)...'],
+            };
 
-            renderResult(result.data);
-            showToast('Xử lý thành công!', 'success');
+            while (true) {
+                await new Promise(r => setTimeout(r, 2000)); // Đợi 2 giây rồi hỏi lại
+
+                const res = await fetch(`/result/${job_id}`);
+
+                if (res.status === 404) {
+                    throw new Error('Job bị mất khỏi server, vui lòng thử lại');
+                }
+
+                const result = await res.json();
+
+                // Cập nhật thanh tiến trình theo trạng thái thật từ server
+                if (statusMap[result.status]) {
+                    const [pct, label] = statusMap[result.status];
+                    setProgress(pct, label);
+                    continue; // Tiếp tục polling
+                }
+
+                if (result.status === 'error') {
+                    throw new Error(result.error || 'Xử lý thất bại phía server');
+                }
+
+                if (result.status === 'done') {
+                    isDone = true;
+                    setProgress(100, 'Hoàn thành!');
+                    setTimeout(() => { progSec.style.display = 'none'; }, 800);
+                    renderResult(result.data);
+                    showToast('Xử lý thành công!', 'success');
+                    break; // Thoát vòng lặp polling
+                }
+            }
 
         } catch (err) {
+            isDone = true;
             setProgress(0, 'Lỗi: ' + err.message);
             document.getElementById(fillId).style.background = 'var(--danger)';
             showToast(err.message, 'error');
@@ -1439,37 +1447,24 @@
         t.className = 'show ' + type;
         setTimeout(() => t.className = '', 3000);
     }
+    
+    function handleNewPiImage(image_b64) {
+        const imgSrc = "data:image/jpeg;base64," + image_b64;
 
-    // 1. Hàm Polling: Cứ 2 giây hỏi Server xem Pi có gửi ảnh chưa
-    setInterval(async () => {
-        try {
-            let response = await fetch('/api/pi_check');
-            let data = await response.json();
+        document.getElementById('captured-image').src = imgSrc;
+        document.getElementById('captured-image-container').style.display = 'block';
+        document.getElementById('btn-process-camera').disabled = false;
 
-            if (data.has_new) {
-                let imgSrc = "data:image/jpeg;base64," + data.image_b64;
-                
-                // Hiển thị ảnh lên khung Camera
-                document.getElementById('captured-image').src = imgSrc;
-                document.getElementById('captured-image-container').style.display = 'block';
-                
-                // Kích hoạt nút Xử lý
-                document.getElementById('btn-process-camera').disabled = false;
-                
-                // Tự động nhảy sang tab Camera để người dùng thấy ảnh
-                document.querySelector('[data-tab="camera"]').click();
-                
-                // Lưu thành Blob để hàm processCameraImage() hiện tại của bạn lấy đi chạy AI
-                capturedImageBlob = base64ToBlob(data.image_b64, 'image/jpeg');
-                
-                showToast('📸 Đã nhận ảnh siêu nét từ Pi Cam V3!', 'success');
-            }
-        } catch (error) {
-            // Bỏ qua lỗi nếu mạng chập chờn
-        }
-    }, 2000);
+        // Nhảy sang tab Camera
+        document.querySelector('[data-tab="camera"]').click();
 
-    // 2. Hàm hỗ trợ chuyển Base64 thành Blob tương thích
+        // Lưu thành Blob để processCameraImage() dùng
+        capturedImageBlob = base64ToBlob(image_b64, 'image/jpeg');
+
+        showToast('Đã nhận ảnh siêu nét từ Pi Cam V3!', 'success');
+    }
+
+    // Hàm hỗ trợ chuyển Base64 thành Blob tương thích
     function base64ToBlob(base64Data, contentType) {
         const byteCharacters = atob(base64Data);
         const byteArrays = [];
@@ -1483,6 +1478,51 @@
         }
         return new Blob(byteArrays, { type: contentType });
     }
+
+    // HỆ THỐNG KẾT NỐI LIVE STREAM TỪ PI CAM V3 QUA WEBSOCKET
+    const liveImg = document.getElementById('pi-live-stream');
+
+    function connectLiveStream() {
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const viewerWsUrl = `${wsProtocol}//${window.location.host}/ws/web_viewer`;
+        
+        let streamWs = new WebSocket(viewerWsUrl);
+
+        streamWs.onmessage = function(event) {
+            // Nếu là text → JSON thông báo có ảnh mới từ Pi
+            if (typeof event.data === 'string') {
+                try {
+                    const msg = JSON.parse(event.data);
+                    if (msg.type === 'new_image') {
+                        handleNewPiImage(msg.image_b64);
+                    }
+                } catch (e) {
+                    console.warn('WS text message không phải JSON:', e);
+                }
+                return;
+            }
+
+            // Nếu là binary → frame video live stream
+            const blob = event.data;
+            const imageUrl = URL.createObjectURL(blob);
+            liveImg.src = imageUrl;
+            liveImg.onload = () => URL.revokeObjectURL(imageUrl);
+        };
+
+        streamWs.onclose = function() {
+            console.log("Mất kết nối Live Stream. Trình duyệt đang thử kết nối lại sau 2 giây...");
+            // Đợi 2 giây và tự động gọi lại chính nó để kết nối lại
+            setTimeout(connectLiveStream, 2000); 
+        };
+
+        streamWs.onerror = function(err) {
+            console.error("Lỗi WebSocket UI: ", err);
+            streamWs.close(); // Ép đóng để trigger onclose kết nối lại
+        };
+    }
+
+    // Khởi động lần đầu khi vào web
+    connectLiveStream();
 </script>
 
 </body>

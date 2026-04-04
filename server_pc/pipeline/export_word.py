@@ -1,6 +1,4 @@
-from pathlib import Path
 import io
-import re
 from docx import Document
 from docx.shared import Pt, Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -23,8 +21,8 @@ def build_docx_mem(ocr_results: list):
             h = it.get("h", 20) # Giữ 20 làm giá trị dự phòng nếu dict rỗng
             cy = it.get("y",0) + h / 2.0
             
-            # SỬA LỖI 1: Bỏ số 6 fix cứng, dùng 30% chiều cao của chính box text đó
-            dy = h * 0.30 
+            # Dùng 30% chiều cao của chính box text đó
+            dy = max(8, h * 0.30)  # Tối thiểu 8px dù box nhỏ đến đâu
             
             if lines and abs(cy - lines[-1]["cy"]) < dy:
                 lines[-1]["items"].append(it)
@@ -46,18 +44,9 @@ def build_docx_mem(ocr_results: list):
             if not page_w:
                 page_w = max(it.get("x", 0) + it.get("w", 0) for it in line["items"])
             
-            gap_thr = 0.04 * page_w
             text_acc = line["items"][0]["text"]
             for i in range(1, len(line["items"])):
-                prev, cur = line["items"][i-1], line["items"][i]
-                
-                prev_w = prev.get("w", page_w * 0.01) 
-                
-                gap = cur.get("x", 0) - (prev.get("x", 0) + prev_w)
-                if gap > gap_thr:
-                    text_acc += "\t" + cur["text"]
-                else:
-                    text_acc += " " + cur["text"]
+                text_acc += " " + line["items"][i]["text"]
             
             label = line["items"][0].get("label", "plain text").lower()
             x_start = line["items"][0].get("x", 0)

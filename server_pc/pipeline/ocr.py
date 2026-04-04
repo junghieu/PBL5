@@ -1,48 +1,67 @@
-import sys
-import os
 import cv2
 import torch
-import numpy as np
-from pathlib import Path
+from collections import deque
 from PIL import Image
 from difflib import SequenceMatcher
 
-# 1. XỬ LÝ ĐƯỜNG DẪN ĐỂ TÌM VIETOCR-MASTER
-base_path = Path(__file__).resolve().parent.parent
-vietocr_path = str(base_path / "vietnamese-ocr-master")
-
-if vietocr_path not in sys.path:
-    sys.path.insert(0, vietocr_path)
-
-# 2. IMPORT TỪ BẢN MASTER
+# 1. IMPORT TỪ THƯ VIỆN ĐÃ CÀI QUA PIP (KHÔNG CẦN FOLDER MASTER NỮA)
 try:
     from vietocr.tool.predictor import Predictor
     from vietocr.tool.config import Cfg
-    print("--- [INFO] Đã kết nối thành công VietOCR Master ---")
-except ModuleNotFoundError:
-    print(f"--- [ERROR] Không tìm thấy VietOCR tại: {vietocr_path} ---")
-    sys.path.append(os.path.abspath("vietnamese-ocr-master"))
-    from vietocr.tool.predictor import Predictor
-    from vietocr.tool.config import Cfg
+    print("--- [INFO] Đã load thư viện vietocr ---")
+except ImportError as e:
+    print(f"--- [ERROR] Lỗi Import! Hãy chắc chắn bạn đã chạy 'pip install vietocr'. Chi tiết: {e} ---")
+
+# # 1. XỬ LÝ ĐƯỜNG DẪN ĐỂ TÌM VIETOCR-MASTER
+# base_path = Path(__file__).resolve().parent.parent
+# vietocr_path = str(base_path / "vietnamese-ocr-master")
+
+# if vietocr_path not in sys.path:
+#     sys.path.insert(0, vietocr_path)
+
+# # 2. IMPORT TỪ BẢN MASTER
+# try:
+#     from vietocr.tool.predictor import Predictor
+#     from vietocr.tool.config import Cfg
+#     print("--- [INFO] Đã kết nối thành công VietOCR Master ---")
+# except ModuleNotFoundError:
+#     print(f"--- [ERROR] Không tìm thấy VietOCR tại: {vietocr_path} ---")
+#     sys.path.append(os.path.abspath("vietnamese-ocr-master"))
+#     from vietocr.tool.predictor import Predictor
+#     from vietocr.tool.config import Cfg
 
 def load_ocr_model():
     # 1. Khai báo base config (BẮT BUỘC phải khớp với cấu trúc đã dùng để train)
     # Ví dụ: Nếu lúc train dùng vgg_transformer thì đổi 'vgg_seq2seq' thành 'vgg_transformer'
-    config = Cfg.load_config_from_name('vgg_seq2seq')
+    config_name = 'vgg_seq2seq' # Hãy nhớ hỏi bạn của bạn xem họ train bằng kiến trúc nào nhé!
+    config = Cfg.load_config_from_name(config_name)
     
-    # 2. Trỏ đường dẫn đến file weights (.pth) mà nhóm bạn vừa train xong
-    # model_name = "ten_file_train_xong_cua_ban.pth" 
-    # full_model_path = str(Path(__file__).resolve().parent.parent / "weights" / model_name)
+    # 2. Trỏ đường dẫn đến file weights (.pth) sau khi train xong
+    # base_path = Path(__file__).resolve().parent.parent
+    # model_name = "ten_file_train_.pth"
+    # full_model_path = base_path / "weights" / model_name
     
-    # 3. Ghi đè đường dẫn weights mặc định bằng weights custom của bạn
+    # Kiểm tra xem file có tồn tại không để tránh lỗi vỡ luồng API
+    # if not full_model_path.exists():
+    #     raise FileNotFoundError(f"--- [ERROR] Không tìm thấy file weights VietOCR tại: {full_model_path} ---")
+        
+    # print(f"--- [INFO] Đang nạp trọng số custom cho VietOCR từ: {full_model_path} ---")
+
+    # 3. Ghi đè đường dẫn weights mặc định bằng weights custom
     # config['weights'] = full_model_path
     
+    # Tắt cờ tải pre-trained weights từ internet của base model
+    # Tránh việc model ưu tiên tải trọng số gốc đè lên trọng số
+    config['cnn']['pretrained'] = False
+
     # 4. Các cấu hình tối ưu chạy trên máy tính
     config['device'] = 'cuda:0' if torch.cuda.is_available() else 'cpu'
     #config['device'] = 'cpu' # Chuyển thành 'cuda:0' nếu máy Server có Card màn hình Nvidia
     config['predictor']['beamsearch'] = False  # Giữ False để chạy nhanh hơn, giảm nguy cơ treo máy khi gặp ảnh khó
     
-    return Predictor(config)
+    # 5. Khởi tạo và trả về Predictor
+    predictor = Predictor(config)
+    return predictor
 
 def _non_max_suppress_boxes(boxes, iou_thresh=0.25, iom_thresh=0.5):
     """Khử các hộp đè lên nhau bằng IoU + IoM"""
@@ -73,7 +92,6 @@ def _non_max_suppress_boxes(boxes, iou_thresh=0.25, iom_thresh=0.5):
             kept.append(b)
     return sorted(kept, key=lambda b: (b["bbox"][1], b["bbox"][0]))
 
-
 def _merge_boxes_into_lines(boxes):
     if not boxes:
         return []
@@ -96,6 +114,8 @@ def _merge_boxes_into_lines(boxes):
         if not placed:
             lines.append({"cy": cy, "members": [b]})
 
+    LABEL_PRIORITY = ["title", "header", "table", "caption", "footer", "plain text"]
+
     merged = []
     for ln in lines:
         members = sorted(ln["members"], key=lambda m: m["bbox"][0])
@@ -104,8 +124,11 @@ def _merge_boxes_into_lines(boxes):
         xs2 = [int(m["bbox"][2]) for m in members]
         ys2 = [int(m["bbox"][3]) for m in members]
         labels = [str(m.get("label", "plain text")).strip().lower() for m in members]
-        label = "title" if "title" in labels else "plain text"
+
+        # Ưu tiên nhãn quan trọng nhất trong dòng, không bỏ mất header/footer/table
+        label = next((l for l in LABEL_PRIORITY if l in labels), "plain text")
         score = max(float(m.get("score", 0.0)) for m in members)
+
         merged.append({
             "bbox": [min(xs1), min(ys1), max(xs2), max(ys2)],
             "label": label,
@@ -113,23 +136,34 @@ def _merge_boxes_into_lines(boxes):
         })
     return sorted(merged, key=lambda b: (b["bbox"][1], b["bbox"][0]))
 
-
 def _normalize_text(text):
     return " ".join(str(text).strip().split()).lower()
 
-
-def _is_duplicate_text(text, existing_texts, sim_threshold=0.9):
+def _is_duplicate_text(text, seen_hashes: set, recent_texts: deque, sim_threshold=0.9):
+    """
+    seen_hashes  : set() lưu hash để check exact match (O(1)).
+    recent_texts : deque() lưu các dòng gần nhất để check fuzzy match.
+                   LƯU Ý: Phải dùng appendleft() để chèn phần tử mới vào ĐẦU deque.
+                   Vòng lặp sẽ ưu tiên so sánh với các dòng mới nhất trước để tối ưu tốc độ.
+    """
     ntext = _normalize_text(text)
     if not ntext:
         return True
-    for ex in existing_texts:
-        nex = _normalize_text(ex)
-        if not nex:
-            continue
-        if ntext == nex or SequenceMatcher(None, ntext, nex).ratio() >= sim_threshold:
-            return True
-    return False
 
+    # 1. Kiểm tra trùng chính xác bằng hash — O(1)
+    h = hash(ntext)
+    if h in seen_hashes:
+        return True
+
+    # 2. Kiểm tra trùng gần đúng chỉ với 20 dòng gần nhất — O(20) thay vì O(n)
+    for ex in recent_texts:
+        if SequenceMatcher(None, ntext, ex).ratio() >= sim_threshold:
+            return True
+
+    # Không trùng → đăng ký vào cả 2 cấu trúc
+    seen_hashes.add(h)
+    recent_texts.appendleft(ntext) # Đưa dòng mới vào đầu deque để ưu tiên kiểm tra với các dòng gần nhất
+    return False
 
 def _predict_best_text(ocr, crop):
     rgb_img = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
@@ -143,14 +177,21 @@ def _predict_best_text(ocr, crop):
 def _filter_pred(pred_text, w_c):
     if not pred_text:
         return False
-    if len(pred_text) < 3:
+    if len(pred_text) < 2:  # Giảm từ 3 xuống 2, giữ lại "5." "A."
         return False
-    alpha = sum(ch.isalpha() for ch in pred_text)
-    if alpha / max(1, len(pred_text)) < 0.5:
+
+    # Chỉ lọc khi TOÀN BỘ là ký tự đặc biệt, không có chữ/số nào
+    # "QĐ-123/2024" có chữ và số → giữ lại
+    # "---***---"   không có gì   → loại
+    alphanumeric = sum(ch.isalnum() for ch in pred_text)
+    if alphanumeric == 0:
         return False
-    # Đã xóa dòng so sánh w_c / len < 3.5 gây lỗi trên ảnh nhỏ
-    if len(pred_text) < 12 and pred_text.isupper():  # loại rác ALLCAPS ngắn (<12 ký tự) thường là mã lỗi, ký hiệu, hoặc kết quả OCR sai
+
+    # Giữ điều kiện ALLCAPS nhưng nới lỏng: chỉ lọc nếu < 4 ký tự
+    # "OK" "ID" là rác, nhưng "QUYẾT ĐỊNH" là tiêu đề hợp lệ
+    if len(pred_text) < 4 and pred_text.isupper() and not any(ch.isdigit() for ch in pred_text):
         return False
+
     return True
 
 def _split_block_into_lines(crop_img):
@@ -242,6 +283,78 @@ def _fallback_full_image(img, ocr):
         
     return " ".join(pred.split())
 
+def run_ocr_mem(img_array, boxes_list, predictor):
+    TEXT_LABELS = {
+        "text", "title", "plain text", "plaintext", "paragraph",
+        "header", "footer", "caption", "list", "footnote", "formula", "table"
+    }
+    page_h, page_w = img_array.shape[:2]
+
+    candidate_boxes = [
+        b for b in boxes_list
+        if str(b.get("label", "")).strip().lower() in TEXT_LABELS
+    ]
+    candidate_boxes = sorted(candidate_boxes, key=lambda b: (int(b["bbox"][1]), int(b["bbox"][0])))
+
+    boxes = _non_max_suppress_boxes(candidate_boxes, iou_thresh=0.25, iom_thresh=0.5)
+    boxes = _merge_boxes_into_lines(boxes)
+
+    text_lines, content_with_labels = [], []
+
+    # Khởi tạo 2 cấu trúc dữ liệu cho dedup
+    seen_hashes  = set()
+    recent_texts = deque(maxlen=20)  # Chỉ nhớ 20 dòng gần nhất cho fuzzy check
+
+    for box in boxes:
+        x1, y1, x2, y2 = [int(v) for v in box["bbox"]]
+        
+        # Dùng tỷ lệ: mở rộng thêm 2% chiều rộng và 10% chiều cao của box
+        box_w, box_h = max(1, x2 - x1), max(1, y2 - y1)
+        pad_x = int(box_w * 0.02)
+        pad_y = int(box_h * 0.10)
+        
+        x1 = max(0, x1 - pad_x); y1 = max(0, y1 - pad_y)
+        x2 = min(img_array.shape[1], x2 + pad_x); y2 = min(img_array.shape[0], y2 + pad_y)
+        crop = img_array[y1:y2, x1:x2]
+
+        if crop.size == 0:
+            continue
+
+        label = str(box.get("label", "")).strip().lower()
+        line_data_list = _split_block_into_lines(crop)
+
+        for l_data in line_data_list:
+            l_crop = l_data["image"]
+            h_c, w_c = l_crop.shape[:2]
+            if w_c < 10 or h_c < 10:
+                continue
+
+            pred_text = _predict_best_text(predictor, l_crop)
+            
+            if not _filter_pred(pred_text, w_c):
+                continue
+            if _is_duplicate_text(pred_text, seen_hashes, recent_texts):
+                continue
+
+            text_lines.append(pred_text)
+            content_with_labels.append({
+                "label": label, "text": pred_text,
+                "x": x1 + l_data["x_local"], "y": y1 + l_data["y_local"],
+                "w": w_c, "h": h_c,
+                "page_w": page_w, "page_h": page_h
+            })
+
+    # Fallback toàn ảnh nếu rỗng
+    if not text_lines:
+        pred_text = _fallback_full_image(img_array, predictor)
+        if pred_text:
+            text_lines.append(pred_text)
+            content_with_labels.append({
+                "label": "plain text", "text": pred_text,
+                "page_w": page_w, "page_h": page_h
+            })
+
+    return {"content": text_lines, "content_with_labels": content_with_labels}
 
 # def run_ocr(pre_dir: Path, layout_results: list, output_dir: Path, predictor=None):
 #     output_dir.mkdir(parents=True, exist_ok=True)
@@ -315,70 +428,3 @@ def _fallback_full_image(img, ocr):
 #         all_results.append({"image": entry["image"], "content": text_lines, "content_with_labels": content_with_labels})
 
 #     return all_results
-
-
-def run_ocr_mem(img_array, boxes_list, predictor):
-    TEXT_LABELS = {
-        "text", "title", "plain text", "plaintext", "paragraph",
-        "header", "footer", "caption", "list", "footnote", "formula", "table"
-    }
-    page_h, page_w = img_array.shape[:2]
-
-    candidate_boxes = [
-        b for b in boxes_list
-        if str(b.get("label", "")).strip().lower() in TEXT_LABELS
-    ]
-    candidate_boxes = sorted(candidate_boxes, key=lambda b: (int(b["bbox"][1]), int(b["bbox"][0])))
-
-    boxes = _non_max_suppress_boxes(candidate_boxes, iou_thresh=0.25, iom_thresh=0.5)
-    boxes = _merge_boxes_into_lines(boxes)
-
-    text_lines, content_with_labels = [], []
-
-    for box in boxes:
-        x1, y1, x2, y2 = [int(v) for v in box["bbox"]]
-        
-        # Dùng tỷ lệ: mở rộng thêm 2% chiều rộng và 10% chiều cao của box
-        box_w, box_h = max(1, x2 - x1), max(1, y2 - y1)
-        pad_x = int(box_w * 0.02)
-        pad_y = int(box_h * 0.10)
-        
-        x1 = max(0, x1 - pad_x); y1 = max(0, y1 - pad_y)
-        x2 = min(img_array.shape[1], x2 + pad_x); y2 = min(img_array.shape[0], y2 + pad_y)
-        crop = img_array[y1:y2, x1:x2]
-
-        if crop.size == 0:
-            continue
-
-        label = str(box.get("label", "")).strip().lower()
-        line_data_list = _split_block_into_lines(crop)
-
-        for l_data in line_data_list:
-            l_crop = l_data["image"]
-            h_c, w_c = l_crop.shape[:2]
-            if w_c < 10 or h_c < 10:
-                continue
-
-            pred_text = _predict_best_text(predictor, l_crop)
-            if not _filter_pred(pred_text, w_c) or _is_duplicate_text(pred_text, text_lines):
-                continue
-
-            text_lines.append(pred_text)
-            content_with_labels.append({
-                "label": label, "text": pred_text,
-                "x": x1 + l_data["x_local"], "y": y1 + l_data["y_local"],
-                "w": w_c, "h": h_c,
-                "page_w": page_w, "page_h": page_h
-            })
-
-    # Fallback toàn ảnh nếu rỗng
-    if not text_lines:
-        pred_text = _fallback_full_image(img_array, predictor)
-        if pred_text:
-            text_lines.append(pred_text)
-            content_with_labels.append({
-                "label": "plain text", "text": pred_text,
-                "page_w": page_w, "page_h": page_h
-            })
-
-    return {"content": text_lines, "content_with_labels": content_with_labels}

@@ -1,3 +1,6 @@
 .venv/
+venv/
+.venv_1p/
+venv_1p/
 __pycache__/
 *.pyc
