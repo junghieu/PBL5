@@ -1,1 +1,2 @@
 *.pth filter=lfs diff=lfs merge=lfs -text
+seq2seq_ocr_nhom11.pth filter=lfs diff=lfs merge=lfs -text
