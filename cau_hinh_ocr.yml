@@ -1,35 +1,31 @@
+# --- CẤU HÌNH OCR NHÓM 11 (KIẾN TRÚC SEQ2SEQ) ---
+
 aug:
   image_aug: true
   masked_language_model: true
+
 backbone: vgg19_bn
+
 cnn:
   hidden: 256
   ks:
-  - - 2
-    - 2
-  - - 2
-    - 2
-  - - 2
-    - 1
-  - - 2
-    - 1
-  - - 1
-    - 1
+  - [2, 2]
+  - [2, 2]
+  - [2, 1]
+  - [2, 1]
+  - [1, 1]
   pretrained: true
   ss:
-  - - 2
-    - 2
-  - - 2
-    - 2
-  - - 2
-    - 1
-  - - 2
-    - 1
-  - - 1
-    - 1
+  - [2, 2]
+  - [2, 2]
+  - [2, 1]
+  - [2, 1]
+  - [1, 1]
+
 dataloader:
   num_workers: 3
   pin_memory: true
+
 dataset:
   data_root: ./img/
   image_height: 32
@@ -38,33 +34,37 @@ dataset:
   name: data
   train_annotation: annotation_train.txt
   valid_annotation: annotation_val_small.txt
+  # Bộ từ vựng đã được tối ưu
   vocab: 'aàảãáạăằẳẵắặâầẩẫấậbcdđeèẻẽéẹêềểễếệghiìỉĩíịklmnoòỏõóọôồổỗốộơờởỡớợpqrstuùủũúụưừửữứựvxyỳỷỹýỵAÀẢÃÁẠĂẰẲẴẮẶÂẦẨẪẤẬBCDĐEÈẺẼÉẸÊỀỂỄẾỆGHIÌỈĨÍỊKLMNOÒỎÕÓỌÔỒỔỐỘƠỜỞỠỚỢPQRSTUÙỦŨÚỤƯỪỬỮỨỰVXYỲỶỸÝỴ0123456789!"#$%&''()*+,-./:;<=>?@[\]^_{|}~ '
-device: cuda:0
+
+device: cpu # Đổi sang CPU để chạy mượt trên Raspberry Pi
+
 optimizer:
   max_lr: 0.0003
   pct_start: 0.1
+
 predictor:
   beamsearch: false
-pretrain: https://vocr.vn/data/vietocr/vgg_transformer.pth
-quiet: false
-seq_modeling: transformer
+
+# Thiết lập kiến trúc Seq2Seq
+seq_modeling: seq2seq
+
+seq2seq:
+  encoder_hidden: 256
+  decoder_hidden: 256
+  img_channel: 256
+  decoder_embedded: 256
+  dropout: 0.1
+
 trainer:
   batch_size: 32
-  checkpoint: ./checkpoint/transformerocr_checkpoint.pth
-  export: ./weights/transformerocr.pth
-  iters: 100000
+  checkpoint: ./checkpoint/seq2seq_ocr_nhom11.pth
+  export: ./weights/seq2seq_ocr_nhom11.pth
+  iters: 15000
   log: ./train.log
-  metrics: null
+  metrics: 1000
   print_every: 200
-  valid_every: 4000
-transformer:
-  d_model: 256
-  dim_feedforward: 2048
-  max_seq_length: 1024
-  nhead: 8
-  num_decoder_layers: 6
-  num_encoder_layers: 6
-  pos_dropout: 0.1
-  trans_dropout: 0.1
-vocab: 'aAàÀảẢãÃáÁạẠăĂằẰẳẲẵẴắẮặẶâÂầẦẩẨẫẪấẤậẬbBcCdDđĐeEèÈẻẺẽẼéÉẹẸêÊềỀểỂễỄếẾệỆfFgGhHiIìÌỉỈĩĨíÍịỊjJkKlLmMnNoOòÒỏỎõÕóÓọỌôÔồỒổỔỗỖốỐộỘơƠờỜởỞỡỠớỚợỢpPqQrRsStTuUùÙủỦũŨúÚụỤưƯừỪửỬữỮứỨựỰvVwWxXyYỳỲỷỶỹỸýÝỵỴzZ0123456789!"#$%&''()*+,-./:;<=>?@[\]^_`{|}~ '
-weights: https://vocr.vn/data/vietocr/vgg_transformer.pth
+  valid_every: 1000
+
+# File weights nội bộ của nhóm
+weights: ./seq2seq_ocr_nhom11.pth
