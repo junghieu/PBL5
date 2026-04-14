@@ -1,8 +1,8 @@
-# --- CẤU HÌNH OCR NHÓM 11 (KIẾN TRÚC SEQ2SEQ) ---
+# --- CẤU HÌNH OCR NHÓM 11 (KIẾN TRÚC SEQ2SEQ - ĐÃ FIX VOCAB) ---
 
 aug:
   image_aug: true
-  masked_language_model: true
+  masked_language_model: false # Seq2Seq không dùng cái này, tắt đi cho nhẹ
 
 backbone: vgg19_bn
 
@@ -34,10 +34,10 @@ dataset:
   name: data
   train_annotation: annotation_train.txt
   valid_annotation: annotation_val_small.txt
-  # Bộ từ vựng đã được tối ưu
-  vocab: 'aàảãáạăằẳẵắặâầẩẫấậbcdđeèẻẽéẹêềểễếệghiìỉĩíịklmnoòỏõóọôồổỗốộơờởỡớợpqrstuùủũúụưừửữứựvxyỳỷỹýỵAÀẢÃÁẠĂẰẲẴẮẶÂẦẨẪẤẬBCDĐEÈẺẼÉẸÊỀỂỄẾỆGHIÌỈĨÍỊKLMNOÒỎÕÓỌÔỒỔỐỘƠỜỞỠỚỢPQRSTUÙỦŨÚỤƯỪỬỮỨỰVXYỲỶỸÝỴ0123456789!"#$%&''()*+,-./:;<=>?@[\]^_{|}~ '
+  # QUAN TRỌNG: Đây là bộ Vocab chuẩn của VietOCR Seq2Seq
+  vocab: 'aAàÀảẢãÃáÁạẠăĂằẰẳẲẵẴắẮặẶâÂầẦẩẨẫẪấẤậẬbBcCdDđĐeEèÈẻẺẽẼéÉẹẸêÊềỀểỂễỄếẾệỆfFgGhHiIìÌỉỈĩĨíÍịỊjJkKlLmMnNoOòÒỏỎõÕóÓọỌôÔồỒổỔỗỖốỐộỘơƠờỜởỞỡỠớỚợỢpPqQrRsStTuUùÙủỦũŨúÚụỤưƯừỪửỬữỮứỨựỰvVwWxXyYỳỲỷỶỹỸýÝỵỴzZ0123456789!"#$%&''()*+,-./:;<=>?@[\]^_`{|}~ '
 
-device: cpu # Đổi sang CPU để chạy mượt trên Raspberry Pi
+device: cpu 
 
 optimizer:
   max_lr: 0.0003
@@ -46,7 +46,6 @@ optimizer:
 predictor:
   beamsearch: false
 
-# Thiết lập kiến trúc Seq2Seq
 seq_modeling: seq2seq
 
 seq2seq:
@@ -66,5 +65,6 @@ trainer:
   print_every: 200
   valid_every: 1000
 
-# File weights nội bộ của nhóm
+# Bộ từ vựng ngoài cũng phải khớp hệt như trong dataset.vocab
+vocab: 'aAàÀảẢãÃáÁạẠăĂằẰẳẲẵẴắẮặẶâÂầẦẩẨẫẪấẤậẬbBcCdDđĐeEèÈẻẺẽẼéÉẹẸêÊềỀểỂễỄếẾệỆfFgGhHiIìÌỉỈĩĨíÍịỊjJkKlLmMnNoOòÒỏỎõÕóÓọỌôÔồỒổỔỗỖốỐộỘơƠờỜởỞỡỠớỚợỢpPqQrRsStTuUùÙủỦũŨúÚụỤưƯừỪửỬữỮứỨựỰvVwWxXyYỳỲỷỶỹỸýÝỵỴzZ0123456789!"#$%&''()*+,-./:;<=>?@[\]^_`{|}~ '
 weights: ./seq2seq_ocr_nhom11.pth
