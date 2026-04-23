@@ -29,7 +29,7 @@ except ImportError:
     sys.exit(1)
 
 # CẤU HÌNH
-SERVER_BASE_URL  = os.getenv("SERVER_BASE_URL", "http://10.82.220.172:5000")
+SERVER_BASE_URL  = os.getenv("SERVER_BASE_URL", "http://10.160.234.172:5000")
 SERVER_UPLOAD_URL = f"{SERVER_BASE_URL}/api/pi_upload"
 WS_STREAM_URL    = (
     SERVER_BASE_URL
@@ -58,20 +58,14 @@ _shutdown     = threading.Event()   # Set khi cần thoát chương trình
 
 #  KHỞI TẠO & DỪNG CAMERA
 def init_camera() -> Picamera2:
-    """
-    Khởi tạo Picamera2 với 2 luồng song song:
-      - 'main'    : 2304×1296 — dùng để chụp ảnh chất lượng cao
-      - 'preview' : 640×480   — dùng để lấy frame live stream (siêu nhanh)
-    Autofocus liên tục được bật nếu Camera V3 hỗ trợ.
-    """
     cam = Picamera2()
     config = cam.create_preview_configuration(
-        main    = {"size": (CAPTURE_WIDTH,  CAPTURE_HEIGHT), "format": "RGB888"},
-        preview = {"size": (PREVIEW_WIDTH,  PREVIEW_HEIGHT), "format": "RGB888"},
+        main  = {"size": (CAPTURE_WIDTH,  CAPTURE_HEIGHT), "format": "RGB888"},
+        lores = {"size": (PREVIEW_WIDTH,  PREVIEW_HEIGHT), "format": "YUV420"},  # lores chỉ hỗ trợ YUV420
     )
     cam.configure(config)
     cam.start()
-    sleep(1.0)  # Chờ camera ổn định trước khi dùng
+    sleep(1.0)
 
     try:
         cam.set_controls({"AfMode": libcamera_controls.AfModeEnum.Continuous})
@@ -79,7 +73,7 @@ def init_camera() -> Picamera2:
     except Exception as e:
         print(f"[CAMERA] Không thể bật Autofocus tự động: {e}")
 
-    print(f"[CAMERA] Sẵn sàng — Main: {CAPTURE_WIDTH}×{CAPTURE_HEIGHT} | Preview: {PREVIEW_WIDTH}×{PREVIEW_HEIGHT}")
+    print(f"[CAMERA] Sẵn sàng — Main: {CAPTURE_WIDTH}×{CAPTURE_HEIGHT} | Lores: {PREVIEW_WIDTH}×{PREVIEW_HEIGHT}")
     return cam
 
 def shutdown_camera():
@@ -187,6 +181,7 @@ def live_stream_thread():
         """Vòng lặp lấy frame và gửi — chạy trong on_open callback."""
         print("[WS] Bắt đầu phát Live Stream...")
         frame_interval = 1.0 / STREAM_FPS
+        consecutive_errors = 0  # Đếm lỗi liên tiếp
 
         while ws.keep_running and not _shutdown.is_set():
             # Tạm dừng khi đang chụp ảnh chính
@@ -200,15 +195,24 @@ def live_stream_thread():
 
             try:
                 # Lấy frame từ luồng 'preview' — không ảnh hưởng luồng 'main'
-                frame_rgb = picam2.capture_array("preview")
+                frame_yuv = picam2.capture_array("lores")          # YUV420
                 # Picamera2 trả RGB, OpenCV cần BGR
-                frame_bgr = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
+                frame_bgr = cv2.cvtColor(frame_yuv, cv2.COLOR_YUV420p2BGR)  # Chuyển sang BGR
 
                 _, buffer = cv2.imencode(
                     ".jpg", frame_bgr,
                     [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY]
                 )
                 ws.send(buffer.tobytes(), opcode=websocket.ABNF.OPCODE_BINARY)
+                consecutive_errors = 0  # Reset khi gửi thành công
+
+            except BrokenPipeError:
+                consecutive_errors += 1
+                print(f"[WS] Broken pipe ({consecutive_errors} lần liên tiếp)")
+                if consecutive_errors >= 3:
+                    print("[WS] Quá nhiều lỗi, ngắt để reconnect...")
+                    break
+                sleep(0.5)  # Nghỉ ngắn rồi thử lại
 
             except Exception as e:
                 print(f"[WS] Lỗi khi gửi frame: {e}")
@@ -226,7 +230,7 @@ def live_stream_thread():
                 on_error = lambda sock, err: print(f"[WS] Lỗi kết nối: {err}"),
                 on_close = lambda sock, code, msg: print(f"[WS] Đã đóng kết nối (code={code})"),
             )
-            ws.run_forever(ping_interval=20, ping_timeout=10)
+            ws.run_forever(ping_interval=10, ping_timeout=5)
         except Exception as e:
             print(f"[WS] Exception: {e}")
 

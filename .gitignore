@@ -1,6 +1,13 @@
 .venv/
 venv/
-.venv_1p/
-venv_1p/
 __pycache__/
 *.pyc
+weights/
+server_pc/weights/transformerocr.pth
+server_pc/pipeline/preprocess1.py
+server_pc/pipeline/ocr1.py
+server_pc/pipeline/layout1.py
+server_pc/pipeline/export_word1.py
+/server_pc/weights
+server_pc/weights/transformerocr.pth
+*.pth
