@@ -11,3 +11,4 @@ server_pc/pipeline/export_word1.py
 /server_pc/weights
 server_pc/weights/transformerocr.pth
 *.pth
+server_pc/templates/index1.html

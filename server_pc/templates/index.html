@@ -804,6 +804,89 @@
             color: var(--text-light);
         }
 
+        /* ── WORD PREVIEW ── */
+        #word-preview-section {
+            display: none;
+            margin-top: 20px;
+            animation: fadeInUp 0.4s ease-out;
+        }
+
+        .preview-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 14px;
+        }
+
+        .preview-title {
+            font-weight: 600;
+            font-size: 13px;
+            color: var(--text-light);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .preview-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        /* Khung giả lập trang A4 */
+        #word-preview-scroll {
+            background: #e8e8e8;
+            border-radius: 8px;
+            padding: 20px;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+
+        #word-preview-scroll::-webkit-scrollbar { width: 6px; }
+        #word-preview-scroll::-webkit-scrollbar-track { background: transparent; }
+        #word-preview-scroll::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
+
+        #word-preview-page {
+            background: #ffffff;
+            width: 100%;
+            max-width: 794px;
+            margin: 0 auto;
+            padding: 60px 72px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.15);
+            border-radius: 2px;
+            min-height: 400px;
+            font-family: 'Times New Roman', serif;
+            font-size: 13pt;
+            line-height: 1.8;
+            color: #1a1a1a;
+        }
+
+        /* Style cho nội dung docx được render bởi mammoth */
+        #word-preview-page h1,
+        #word-preview-page h2,
+        #word-preview-page h3 {
+            text-align: center;
+            font-weight: bold;
+            margin: 8px 0;
+        }
+        #word-preview-page p { margin: 4px 0; }
+        #word-preview-page table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 8px 0;
+            font-size: 11pt;
+        }
+        #word-preview-page td,
+        #word-preview-page th {
+            border: 1px solid #ccc;
+            padding: 4px 8px;
+        }
+
+        #word-preview-loading {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-light);
+            font-size: 13px;
+        }
+
         /* ── TOAST ── */
         #toast {
             position: fixed;
@@ -1048,9 +1131,31 @@
                     <div class="download-filename" id="download-filename">result.docx</div>
                     <div class="download-meta" id="download-meta">Sẵn sàng tải về</div>
                 </div>
-                <button class="btn btn-primary" id="btn-download" onclick="downloadDocx()">
-                    Tải .docx
-                </button>
+                <div style="display:flex;gap:8px;">
+                    <button class="btn btn-primary" id="btn-download" onclick="downloadDocx()">
+                        Tải .docx
+                    </button>
+                    <button class="btn btn-secondary" id="btn-download-pdf" onclick="downloadPdf()">
+                        Tải .pdf
+                    </button>
+                </div>
+            </div>
+
+            <!-- WORD PREVIEW -->
+            <div id="word-preview-section">
+                <div class="preview-header">
+                    <div class="preview-title">Xem trước nội dung Word</div>
+                    <div class="preview-actions">
+                        <button class="btn btn-ghost" style="padding:4px 10px;font-size:11px;" onclick="togglePreview()">
+                            <span id="preview-toggle-label">Thu gọn</span>
+                        </button>
+                    </div>
+                </div>
+                <div id="word-preview-scroll">
+                    <div id="word-preview-page">
+                        <div id="word-preview-loading">Đang render nội dung...</div>
+                    </div>
+                </div>
             </div>
 
             <div class="result-grid">
@@ -1085,6 +1190,9 @@
 <!-- TOAST -->
 <div id="toast"></div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script>
     // ── STATE ──
     let uploadedFile = null;
@@ -1409,6 +1517,80 @@
             document.getElementById('download-meta').textContent =
                 `${lines.length} dòng · job ${data.job_id ? data.job_id.slice(0,8) : '—'}`;
             document.getElementById('download-bar').style.display = 'flex';
+            renderWordPreview(currentDocxB64);
+        }
+    }
+
+    // ── WORD PREVIEW ──
+    let previewCollapsed = false;
+
+    async function renderWordPreview(b64) {
+        const section = document.getElementById('word-preview-section');
+        const page    = document.getElementById('word-preview-page');
+        section.style.display = 'block';
+        previewCollapsed = false;
+        document.getElementById('preview-toggle-label').textContent = 'Thu gọn';
+        document.getElementById('word-preview-scroll').style.display = 'block';
+        page.innerHTML = '<div id="word-preview-loading">Đang render nội dung...</div>';
+
+        try {
+            const bytes      = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+            const arrayBuf   = bytes.buffer;
+            const result     = await mammoth.convertToHtml({ arrayBuffer: arrayBuf });
+            page.innerHTML   = result.value || '<span style="color:#999">Không có nội dung</span>';
+        } catch (err) {
+            page.innerHTML = `<span style="color:var(--danger)">Lỗi render: ${err.message}</span>`;
+        }
+    }
+
+    function togglePreview() {
+        const scroll = document.getElementById('word-preview-scroll');
+        const label  = document.getElementById('preview-toggle-label');
+        previewCollapsed = !previewCollapsed;
+        scroll.style.display = previewCollapsed ? 'none' : 'block';
+        label.textContent    = previewCollapsed ? 'Mở rộng' : 'Thu gọn';
+    }
+
+    // ── DOWNLOAD PDF ──
+    async function downloadPdf() {
+        const page = document.getElementById('word-preview-page');
+        if (!page || !currentDocxB64) return;
+
+        showToast('Đang tạo PDF...', '');
+        const btn = document.getElementById('btn-download-pdf');
+        btn.disabled = true;
+
+        try {
+            const canvas = await html2canvas(page, {
+                scale: 2,
+                useCORS: true,
+                backgroundColor: '#ffffff',
+            });
+
+            const imgData  = canvas.toDataURL('image/jpeg', 0.95);
+            const { jsPDF } = window.jspdf;
+            const pdf       = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+            const pdfW  = pdf.internal.pageSize.getWidth();
+            const pdfH  = pdf.internal.pageSize.getHeight();
+            const ratio = canvas.width / canvas.height;
+            const imgH  = pdfW / ratio;
+
+            // Nếu nội dung dài hơn 1 trang → tự động chia trang
+            let posY = 0;
+            while (posY < imgH) {
+                if (posY > 0) pdf.addPage();
+                pdf.addImage(imgData, 'JPEG', 0, -posY, pdfW, imgH);
+                posY += pdfH;
+            }
+
+            const pdfName = (currentDocxName || 'result').replace(/\.docx$/i, '') + '.pdf';
+            pdf.save(pdfName);
+            showToast('Đang tải ' + pdfName, 'success');
+        } catch (err) {
+            showToast('Lỗi tạo PDF: ' + err.message, 'error');
+        } finally {
+            btn.disabled = false;
         }
     }
 
@@ -1437,6 +1619,8 @@
         document.getElementById('layout-img-wrap').innerHTML =
             '<span style="color:var(--text-light)">Ảnh bố cục sẽ hiện tại đây</span>';
         document.getElementById('download-bar').style.display = 'none';
+        document.getElementById('word-preview-section').style.display = 'none';
+        document.getElementById('word-preview-page').innerHTML = '';
         currentDocxB64 = null; currentDocxName = null;
         ['stat-boxes','stat-lines','stat-chars'].forEach(id => document.getElementById(id).textContent = '—');
     }
