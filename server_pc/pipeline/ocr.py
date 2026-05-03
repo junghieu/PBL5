@@ -17,13 +17,8 @@ except ImportError as e:
 def load_ocr_model():
     """
     Load VietOCR model theo 2 chế độ:
-
     - Custom (ưu tiên): dùng khi đã có file .pth và .yml do nhóm tự train.
-      Cần cả 2 file cùng tồn tại trong thư mục weights/.
-
-    - Pretrained (fallback): dùng model gốc vgg_seq2seq của tác giả VietOCR,
-      tải tự động qua internet lần đầu, các lần sau dùng cache.
-      Dùng trong giai đoạn chưa có data/model riêng.
+    - Pretrained (fallback): dùng model gốc vgg_seq2seq của tác giả VietOCR.
     """
     base_path   = Path(__file__).resolve().parent.parent
     config_path = base_path / "weights" / "cau_hinh_ocr_v2.yml"
@@ -31,7 +26,6 @@ def load_ocr_model():
 
     device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
 
-    # Chế độ Custom — chỉ dùng khi CẢ HAI file đều tồn tại
     if config_path.exists() and model_path.exists():
         print(f"[INFO] Tìm thấy model custom — đang nạp từ: {model_path}")
 
@@ -40,7 +34,6 @@ def load_ocr_model():
         with open(str(config_path), 'r', encoding='utf-8') as f:
             custom_config = yaml.safe_load(f)
 
-        # Override vocab — quan trọng nhất, sai vocab → sai toàn bộ kết quả
         if 'vocab' in custom_config:
             config['vocab'] = custom_config['vocab']
         elif 'dataset' in custom_config and 'vocab' in custom_config['dataset']:
@@ -60,13 +53,12 @@ def load_ocr_model():
         print("[INFO] Nạp VietOCR custom thành công")
         return Predictor(config)
 
-    # Chế độ Pretrained — fallback về model gốc của tác giả
     missing = []
     if not config_path.exists():
         missing.append(config_path.name)
     if not model_path.exists():
         missing.append(model_path.name)
-    print(f"[INFO] Chưa có file custom ({', '.join(missing)}) — dùng pretrained vgg_seq2seq của tác giả")
+    print(f"[INFO] Chưa có file custom ({', '.join(missing)}) — dùng pretrained vgg_seq2seq")
 
     config = Cfg.load_config_from_name('vgg_seq2seq')
     config['device']                  = device
@@ -82,13 +74,13 @@ def run_ocr_mem(img_array, boxes_list, predictor):
 
     Args:
         img_array  : ảnh BGR đã qua preprocess_for_ocr()
-        boxes_list : list[dict] từ run_layout_mem() — mỗi dict có bbox, label, score
+        boxes_list : list[dict] từ run_layout_mem()
         predictor  : VietOCR Predictor đã load từ load_ocr_model()
 
     Returns:
         dict với 2 key:
-            "content"            : list[str] — các dòng text theo thứ tự đọc
-            "content_with_labels": list[dict] — text kèm label, tọa độ, kích thước
+            "content"            : list[str]
+            "content_with_labels": list[dict]
     """
     TEXT_LABELS = {
         "text", "title", "plain text", "plaintext", "paragraph",
@@ -107,34 +99,52 @@ def run_ocr_mem(img_array, boxes_list, predictor):
 
     boxes = _non_max_suppress_boxes(candidate_boxes, iou_thresh=0.25, iom_thresh=0.5)
     boxes = _merge_boxes_into_lines(boxes)
+    boxes = _split_two_column_lines(boxes, page_w)
 
     text_lines, content_with_labels = [], []
     seen_hashes  = set()
     recent_texts = deque(maxlen=20)
 
-    for box in boxes:
+    for block_idx, box in enumerate(boxes):
         x1, y1, x2, y2 = [int(v) for v in box["bbox"]]
 
         box_w = max(1, x2 - x1)
         box_h = max(1, y2 - y1)
-        pad_x = int(box_w * 0.02)
-        pad_y = int(box_h * 0.10)
+        pad_x = int(box_w * 0.06)
+        pad_y = int(box_h * 0.18)
 
         x1 = max(0, x1 - pad_x)
         y1 = max(0, y1 - pad_y)
         x2 = min(page_w, x2 + pad_x)
         y2 = min(page_h, y2 + pad_y)
 
-        crop = img_array[y1:y2, x1:x2]
+        crop  = img_array[y1:y2, x1:x2]
         if crop.size == 0:
             continue
 
-        label          = str(box.get("label", "")).strip().lower()
+        label = str(box.get("label", "")).strip().lower()
+
+        # Tiêu đề lớn dễ bị cắt mất chữ đầu/cuối — tăng pad thêm
+        if label in ("title", "header"):
+            extra = int(box_w * 0.05)
+            x1    = max(0, x1 - extra)
+            x2    = min(page_w, x2 + extra)
+            crop  = img_array[y1:y2, x1:x2]
+
+        # Cột phải hay bị cắt sát mép — nới thêm bên phải
+        col_index = box.get("col_index", -1)
+        if col_index == 0:
+            x1   = max(0, x1 - int(box_w * 0.03))
+            crop = img_array[y1:y2, x1:x2]
+        elif col_index == 1:
+            x2   = min(page_w, x2 + int(box_w * 0.06))
+            crop = img_array[y1:y2, x1:x2]
+
         line_data_list = _split_block_into_lines(crop, label=label)
 
         for l_data in line_data_list:
-            l_crop     = l_data["image"]
-            h_c, w_c   = l_crop.shape[:2]
+            l_crop   = l_data["image"]
+            h_c, w_c = l_crop.shape[:2]
             if w_c < 10 or h_c < 10:
                 continue
 
@@ -147,14 +157,17 @@ def run_ocr_mem(img_array, boxes_list, predictor):
 
             text_lines.append(pred_text)
             content_with_labels.append({
-                "label":  label,
-                "text":   pred_text,
-                "x":      x1 + l_data["x_local"],
-                "y":      y1 + l_data["y_local"],
-                "w":      w_c,
-                "h":      h_c,
-                "page_w": page_w,
-                "page_h": page_h,
+                "label":     label,
+                "text":      pred_text,
+                "x":         x1 + l_data["x_local"],
+                "y":         y1 + l_data["y_local"],
+                "w":         w_c,
+                "h":         h_c,
+                "block_x":   x1,
+                "page_w":    page_w,
+                "page_h":    page_h,
+                "col_index": col_index,
+                "block_id":  block_idx,
             })
 
     # Fallback toàn ảnh nếu không đọc được gì
@@ -175,7 +188,7 @@ def run_ocr_mem(img_array, boxes_list, predictor):
 # ── NỘI BỘ ───────────────────────────────────────────────────────────────────
 
 def _non_max_suppress_boxes(boxes, iou_thresh=0.25, iom_thresh=0.5):
-    """Khử các hộp đè lên nhau bằng IoU + IoM, ưu tiên giữ hộp có score cao hơn."""
+    """Khử các hộp đè lên nhau bằng IoU + IoM."""
     if not boxes:
         return []
 
@@ -211,15 +224,12 @@ def _non_max_suppress_boxes(boxes, iou_thresh=0.25, iom_thresh=0.5):
 
 def _merge_boxes_into_lines(boxes):
     """
-    Gom các bbox cùng dòng vật lý thành 1 bbox duy nhất.
-    Dùng cy cố định (anchor) của member đầu tiên trong mỗi dòng làm mốc so sánh,
-    tránh running average kéo threshold và merge nhầm tiêu đề với nội dung.
+    Gom các bbox cùng dòng vật lý thành 1 bbox.
+    Dùng anchor_cy cố định của member đầu tiên làm mốc.
     """
     if not boxes:
         return []
 
-    # Tính threshold theo trung vị chiều cao thay vì trung bình
-    # → ít bị ảnh hưởng bởi tiêu đề cỡ chữ lớn bất thường
     heights = sorted([b["bbox"][3] - b["bbox"][1] for b in boxes])
     median_height   = heights[len(heights) // 2]
     y_center_thresh = median_height * 0.5
@@ -233,7 +243,6 @@ def _merge_boxes_into_lines(boxes):
         placed = False
 
         for ln in lines:
-            # So sánh với anchor_cy cố định, không dùng running average
             if abs(cy - ln["anchor_cy"]) <= y_center_thresh:
                 ln["members"].append(b)
                 placed = True
@@ -257,36 +266,74 @@ def _merge_boxes_into_lines(boxes):
         score = max(float(m.get("score", 0.0)) for m in members)
 
         merged.append({
-            "bbox":  [min(xs1), min(ys1), max(xs2), max(ys2)],
-            "label": label,
-            "score": score,
+            "bbox":    [min(xs1), min(ys1), max(xs2), max(ys2)],
+            "label":   label,
+            "score":   score,
+            "members": members,
         })
 
     return sorted(merged, key=lambda b: (b["bbox"][1], b["bbox"][0]))
 
 
+def _split_two_column_lines(boxes, page_w):
+    """
+    Phát hiện và tách dòng 2 cột thành 2 bbox riêng biệt.
+    Điều kiện: 2 member, gap > 15% page_w, chiều cao tương đương, mỗi cột > 10% page_w.
+    """
+    result = []
+    for box in boxes:
+        members    = box.get("members", [])
+        is_two_col = False
+
+        if len(members) == 2:
+            m0       = members[0]
+            m1       = members[1]
+            x0_right = int(m0["bbox"][2])
+            x1_left  = int(m1["bbox"][0])
+            h0 = int(m0["bbox"][3]) - int(m0["bbox"][1])
+            h1 = int(m1["bbox"][3]) - int(m1["bbox"][1])
+            w0 = x0_right - int(m0["bbox"][0])
+            w1 = int(m1["bbox"][2]) - x1_left
+            gap = x1_left - x0_right
+
+            if (gap > page_w * 0.15
+                    and (min(h0, h1) / max(h0, h1)) > 0.5 if max(h0, h1) > 0 else False
+                    and w0 > page_w * 0.10 and w1 > page_w * 0.10):
+                is_two_col = True
+                result.append({
+                    "bbox":      m0["bbox"], "label": box["label"],
+                    "score":     float(m0.get("score", box["score"])),
+                    "col_index": 0, "members": [m0],
+                })
+                result.append({
+                    "bbox":      m1["bbox"], "label": box["label"],
+                    "score":     float(m1.get("score", box["score"])),
+                    "col_index": 1, "members": [m1],
+                })
+
+        if not is_two_col:
+            box.setdefault("col_index", -1)
+            result.append(box)
+
+    return result
+
+
 def _split_block_into_lines(crop_img, label="plain text"):
     """
-    Tách một block ảnh thành các dòng text riêng lẻ.
-
-    Với label "table": trả về nguyên block, không tách dòng —
-    vì table cần OCR toàn vùng để giữ ngữ cảnh.
-
-    Dùng anchor_cy cố định cho mỗi group thay vì running average
-    để tránh merge nhầm 2 dòng gần nhau.
+    Tách block ảnh thành các dòng text.
+    - Table: trả về nguyên block.
+    - Title/Header ngắn (< 3 dòng ước tính): trả về nguyên block.
     """
     h_img, w_img = crop_img.shape[:2]
 
-    # Table: không tách dòng, trả về nguyên block
     if label == "table":
         return [{"image": crop_img, "x_local": 0, "y_local": 0}]
 
-    # Block quá bẹp → không tách được, trả về nguyên
     if h_img < (w_img * 0.02):
         return [{"image": crop_img, "x_local": 0, "y_local": 0}]
 
-    gray    = cv2.cvtColor(crop_img, cv2.COLOR_BGR2GRAY)
-    blur    = cv2.GaussianBlur(gray, (5, 5), 0)
+    gray      = cv2.cvtColor(crop_img, cv2.COLOR_BGR2GRAY)
+    blur      = cv2.GaussianBlur(gray, (5, 5), 0)
     _, thresh = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
 
     kernel_width = max(5, int(w_img * 0.03))
@@ -295,8 +342,9 @@ def _split_block_into_lines(crop_img, label="plain text"):
 
     cnts, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-    min_h      = max(5, int(h_img * 0.05))
-    min_w      = max(5, int(w_img * 0.01))
+    min_h = max(5, int(h_img * 0.05))
+    min_w = max(5, int(w_img * 0.05 if label in ("title", "header") else w_img * 0.01))
+
     line_boxes = [
         (x, y, w, h)
         for c in cnts
@@ -307,8 +355,13 @@ def _split_block_into_lines(crop_img, label="plain text"):
     if not line_boxes:
         return [{"image": crop_img, "x_local": 0, "y_local": 0}]
 
-    line_boxes     = sorted(line_boxes, key=lambda b: b[1])
-    avg_h          = sum(b[3] for b in line_boxes) / len(line_boxes)
+    line_boxes = sorted(line_boxes, key=lambda b: b[1])
+    avg_h      = sum(b[3] for b in line_boxes) / len(line_boxes)
+
+    # Title/Header ngắn → không tách dòng, tránh cắt thành mảnh nhỏ
+    if label in ("title", "header") and (h_img / max(avg_h, 20)) < 3:
+        return [{"image": crop_img, "x_local": 0, "y_local": 0}]
+
     dynamic_thresh = avg_h * 0.45
 
     groups = []
@@ -316,7 +369,6 @@ def _split_block_into_lines(crop_img, label="plain text"):
         cy     = box[1] + box[3] / 2.0
         placed = False
         for group in groups:
-            # Dùng anchor_cy cố định, không running average
             if abs(group["anchor_cy"] - cy) < dynamic_thresh:
                 group["boxes"].append(box)
                 placed = True
@@ -331,9 +383,9 @@ def _split_block_into_lines(crop_img, label="plain text"):
     lines = []
     for (x, y, w, h) in final_boxes:
         pad_x = max(2, int(w * 0.02))
-        pad_y = max(2, int(h * 0.10))
-        y1 = max(0, y - pad_y);    y2 = min(h_img, y + h + pad_y)
-        x1 = max(0, x - pad_x);   x2 = min(w_img, x + w + pad_x)
+        pad_y = max(3, int(h * 0.15))
+        y1 = max(0, y - pad_y);  y2 = min(h_img, y + h + pad_y)
+        x1 = max(0, x - pad_x); x2 = min(w_img, x + w + pad_x)
         lines.append({"image": crop_img[y1:y2, x1:x2], "x_local": x1, "y_local": y1})
 
     return lines
@@ -344,11 +396,7 @@ def _normalize_text(text):
 
 
 def _is_duplicate_text(text, seen_hashes: set, recent_texts: deque, sim_threshold=0.9):
-    """
-    Kiểm tra text có bị trùng với các dòng đã xử lý không.
-    - Exact match: dùng hash set — O(1)
-    - Fuzzy match: chỉ so sánh với 20 dòng gần nhất — O(20)
-    """
+    """Kiểm tra trùng lặp: exact match O(1) + fuzzy match O(20)."""
     ntext = _normalize_text(text)
     if not ntext:
         return True
@@ -367,7 +415,7 @@ def _is_duplicate_text(text, seen_hashes: set, recent_texts: deque, sim_threshol
 
 
 def _predict_best_text(ocr, crop):
-    """Chạy VietOCR trên một crop ảnh, trả về chuỗi đã chuẩn hóa khoảng trắng."""
+    """Chạy VietOCR trên crop ảnh, trả về chuỗi đã chuẩn hóa khoảng trắng."""
     try:
         rgb_img   = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
         pil_img   = Image.fromarray(rgb_img)
@@ -380,11 +428,8 @@ def _predict_best_text(ocr, crop):
 def _filter_pred(pred_text):
     """
     Lọc kết quả OCR rác.
-    Giữ lại nếu:
-      - Không rỗng sau khi strip
-      - Có ít nhất 2 ký tự
-      - Có ít nhất 1 ký tự chữ/số
-      - Không phải chuỗi ALLCAPS ngắn (< 4 ký tự) không có số — ví dụ "OK", "ID"
+    Giữ lại nếu: không rỗng, >= 2 ký tự, có ít nhất 1 chữ/số,
+    không phải chuỗi toàn số dài, không phải noise nhị phân.
     """
     if not pred_text:
         return False
@@ -397,19 +442,21 @@ def _filter_pred(pred_text):
     if alphanumeric == 0:
         return False
 
-    if (len(pred_text) < 4
-            and pred_text.isupper()
-            and not any(ch.isdigit() for ch in pred_text)):
+    # Lọc chuỗi toàn số dài (noise serial, nhị phân...)
+    digits_only = sum(ch.isdigit() for ch in pred_text)
+    if digits_only == alphanumeric and len(pred_text) > 4:
+        return False
+
+    # Lọc chuỗi > 75% ký tự 0 và 1
+    binary_chars = sum(ch in "01" for ch in pred_text)
+    if len(pred_text) > 6 and binary_chars / len(pred_text) > 0.75:
         return False
 
     return True
 
 
 def _fallback_full_image(img, ocr):
-    """
-    Dự phòng: OCR toàn bộ ảnh khi không phát hiện được vùng text nào.
-    Lọc kết quả rác bằng tỷ lệ ký tự hợp lệ (>= 40%).
-    """
+    """Dự phòng: OCR toàn ảnh khi không detect được vùng text nào."""
     try:
         pred = ocr.predict(
             Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))

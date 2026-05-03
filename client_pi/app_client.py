@@ -29,7 +29,7 @@ except ImportError:
     sys.exit(1)
 
 # CẤU HÌNH
-SERVER_BASE_URL  = os.getenv("SERVER_BASE_URL", "http://10.160.234.172:5000")
+SERVER_BASE_URL  = os.getenv("SERVER_BASE_URL", "http://10.150.17.172:5000")
 SERVER_UPLOAD_URL = f"{SERVER_BASE_URL}/api/pi_upload"
 WS_STREAM_URL    = (
     SERVER_BASE_URL
@@ -60,8 +60,7 @@ _shutdown     = threading.Event()   # Set khi cần thoát chương trình
 def init_camera() -> Picamera2:
     cam = Picamera2()
     config = cam.create_preview_configuration(
-        main  = {"size": (CAPTURE_WIDTH,  CAPTURE_HEIGHT), "format": "RGB888"},
-        lores = {"size": (PREVIEW_WIDTH,  PREVIEW_HEIGHT), "format": "YUV420"},  # lores chỉ hỗ trợ YUV420
+        main = {"size": (CAPTURE_WIDTH, CAPTURE_HEIGHT), "format": "RGB888"},
     )
     cam.configure(config)
     cam.start()
@@ -195,9 +194,10 @@ def live_stream_thread():
 
             try:
                 # Lấy frame từ luồng 'preview' — không ảnh hưởng luồng 'main'
-                frame_yuv = picam2.capture_array("lores")          # YUV420
-                # Picamera2 trả RGB, OpenCV cần BGR
-                frame_bgr = cv2.cvtColor(frame_yuv, cv2.COLOR_YUV420p2BGR)  # Chuyển sang BGR
+                # picamera2 RGB888 thực tế trả BGR — dùng thẳng không convert
+                frame_raw = picam2.capture_array("main")
+                frame_bgr = cv2.resize(frame_raw, (PREVIEW_WIDTH, PREVIEW_HEIGHT),
+                                       interpolation=cv2.INTER_LINEAR)
 
                 _, buffer = cv2.imencode(
                     ".jpg", frame_bgr,
