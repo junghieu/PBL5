@@ -60,7 +60,8 @@ _shutdown     = threading.Event()   # Set khi cần thoát chương trình
 def init_camera() -> Picamera2:
     cam = Picamera2()
     config = cam.create_preview_configuration(
-        main = {"size": (CAPTURE_WIDTH, CAPTURE_HEIGHT), "format": "RGB888"},
+        main  = {"size": (CAPTURE_WIDTH,  CAPTURE_HEIGHT), "format": "RGB888"},
+        lores = {"size": (PREVIEW_WIDTH,  PREVIEW_HEIGHT), "format": "YUV420"},
     )
     cam.configure(config)
     cam.start()
@@ -194,10 +195,10 @@ def live_stream_thread():
 
             try:
                 # Lấy frame từ luồng 'preview' — không ảnh hưởng luồng 'main'
-                # picamera2 RGB888 thực tế trả BGR — dùng thẳng không convert
-                frame_raw = picam2.capture_array("main")
-                frame_bgr = cv2.resize(frame_raw, (PREVIEW_WIDTH, PREVIEW_HEIGHT),
-                                       interpolation=cv2.INTER_LINEAR)
+                # lores trả về shape (720, 640) = YUV420 planar (480*3//2=720)
+                # cv2.COLOR_YUV2BGR_I420 cần input shape (H*3//2, W)
+                frame_yuv = picam2.capture_array("lores")  # shape (720, 640)
+                frame_bgr = cv2.cvtColor(frame_yuv, cv2.COLOR_YUV2BGR_I420)
 
                 _, buffer = cv2.imencode(
                     ".jpg", frame_bgr,
